@@ -54,7 +54,29 @@ pip install huggingface-hub
 
 ## Fetch all models
 
+You can download the required models using either of these methods:
+
+### Option 1: Using the automated script (recommended)
+
 ```bash
+# Open PowerShell and navigate to the project directory
+# You may need to set execution policy first
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+
+# Run the script
+.\run_download.ps1
+```
+
+This script automatically:
+- Creates and activates the virtual environment
+- Updates pip and installs dependencies
+- Creates the models directory
+- Downloads all required models
+
+### Option 2: Manual download
+
+```bash
+# With virtual environment activated
 python download_models.py
 ```
 
