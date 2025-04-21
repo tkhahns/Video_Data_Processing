@@ -61,12 +61,11 @@ pip install --upgrade pip
 # Install project dependencies
 pip install -r requirements.txt
 
-# Reinstall problematic packages if needed
-pip uninstall -y huggingface-hub
+# Install huggingface-hub
 pip install huggingface-hub
 ```
 
-### 4. Install system dependencies (macOS)
+<!-- ### 4. Install system dependencies (macOS)
 
 ```bash
 brew install cmake pkg-config protobuf
@@ -76,11 +75,11 @@ brew install cmake pkg-config protobuf
 
 ```bash
 pip install sentencepiece --no-build-isolation
-```
+``` -->
 
 ---
 
-## Verification
+<!-- ## Verification
 
 Verify the installation by running:
 
@@ -89,7 +88,13 @@ Verify the installation by running:
 python -c "import pandas, transformers, huggingface_hub; print('Installation successful!')"
 
 # Test running a basic script
-python models/download_models.py --help
+python download_models.py --help
+``` -->
+
+## Fetch all models
+
+```bash
+python download_models.py
 ```
 
 ---
