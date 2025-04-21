@@ -23,8 +23,7 @@ brew install python@3.13
 ### 1. Clone the repository
 
 ```bash
-git clone [repository-url]
-cd Video_Data_Processing
+git clone https://github.com/tkhahns/Video_Data_Processing
 ```
 
 ### 2. Create and activate a virtual environment
