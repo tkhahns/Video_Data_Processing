@@ -65,33 +65,29 @@ pip install -r requirements.txt
 pip install huggingface-hub
 ```
 
-<!-- ### 4. Install system dependencies (macOS)
-
-```bash
-brew install cmake pkg-config protobuf
-```
-
-### 5. Install additional Python packages
-
-```bash
-pip install sentencepiece --no-build-isolation
-``` -->
-
 ---
 
-<!-- ## Verification
+## Fetch all models
 
-Verify the installation by running:
+You can download the required models using either of these methods:
+
+### Option 1: Using the automated script (recommended)
 
 ```bash
-# Check if key packages are properly installed
-python -c "import pandas, transformers, huggingface_hub; print('Installation successful!')"
+# Make the script executable
+chmod +x run_download.sh
 
-# Test running a basic script
-python download_models.py --help
-``` -->
+# Run the script
+./run_download.sh
+```
 
-## Fetch all models
+This script automatically:
+- Creates and activates the virtual environment
+- Updates pip and installs dependencies
+- Creates the models directory
+- Downloads all required models
+
+### Option 2: Manual download
 
 ```bash
 python download_models.py
