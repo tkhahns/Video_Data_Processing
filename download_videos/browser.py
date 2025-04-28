@@ -9,6 +9,7 @@ import msal
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.support.ui import WebDriverWait
 from webdriver_manager.chrome import ChromeDriverManager
 
 logger = logging.getLogger(__name__)
@@ -86,7 +87,7 @@ def authenticate_with_selenium(browser, url):
         browser.get(url)
         
         # Wait for authentication to complete (URL should change to SharePoint domain)
-        webdriver.support.ui.WebDriverWait(browser, 300).until(
+        WebDriverWait(browser, 300).until(
             lambda driver: urllib.parse.urlparse(driver.current_url).netloc.endswith("sharepoint.com")
         )
         
