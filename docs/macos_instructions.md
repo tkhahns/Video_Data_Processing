@@ -75,10 +75,10 @@ You can download the required models using either of these methods:
 
 ```bash
 # Make the script executable
-chmod +x run_download.sh
+chmod +x run_download_models.sh
 
 # Run the script
-./run_download.sh
+./run_download_models.sh
 ```
 
 This script automatically:

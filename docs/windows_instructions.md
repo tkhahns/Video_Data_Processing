@@ -64,7 +64,7 @@ You can download the required models using either of these methods:
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 # Run the script
-.\run_download.ps1
+.\run_download_models.ps1
 ```
 
 This script automatically:
