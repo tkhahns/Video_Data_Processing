@@ -114,3 +114,31 @@ python download_models.py
   which python
   # Should point to your virtual environment's .venv/bin/python
   ```
+
+---
+
+## Download Videos from SharePoint
+
+You can download videos from SharePoint using the included browser automation tool:
+
+```bash
+# Basic usage
+python -m download_videos --url "https://your-sharepoint-site.com/folder-with-videos"
+
+# Save to a specific directory
+python -m download_videos --url "https://your-sharepoint-site.com/folder-with-videos" --output-dir "./my-videos"
+
+# Just list files without downloading
+python -m download_videos --url "https://your-sharepoint-site.com/folder-with-videos" --list-only
+
+# Enable debug mode for troubleshooting
+python -m download_videos --url "https://your-sharepoint-site.com/folder-with-videos" --debug
+```
+
+This will:
+1. Open a browser window for SharePoint authentication
+2. Find all available files in the specified folder
+3. Present you with a list of files to choose from
+4. Download your selected files
+
+**Note:** The tool requires authentication to SharePoint. You'll need to sign in through the browser window that opens.
