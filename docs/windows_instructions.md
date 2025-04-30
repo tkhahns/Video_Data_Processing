@@ -104,6 +104,28 @@ python ./src/download_models.py
 
 You can download videos from SharePoint using the included browser automation tool:
 
+### Option 1: Using the convenience script (recommended)
+
+```bash
+# Run the script with no arguments (you'll be prompted for the URL)
+.\run_download_videos.ps1
+
+# Or specify the URL directly
+.\run_download_videos.ps1 --url "https://your-sharepoint-site.com/folder-with-videos"
+
+# Additional options:
+.\run_download_videos.ps1 --url "https://your-sharepoint-site.com/folder-with-videos" --output-dir "./my-videos"
+.\run_download_videos.ps1 --list-only
+.\run_download_videos.ps1 --debug
+```
+
+This script automatically:
+- Activates the virtual environment
+- Prompts for SharePoint URL if not provided
+- Handles errors gracefully
+
+### Option 2: Running the Python script directly
+
 ```bash
 # Basic usage
 python src/download_videos/main.py --url "https://your-sharepoint-site.com/folder-with-videos"
