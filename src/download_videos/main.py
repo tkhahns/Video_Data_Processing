@@ -7,11 +7,24 @@ import argparse
 import logging
 from pathlib import Path
 
-from .browser import setup_browser, authenticate_with_selenium
-from .sharepoint import find_all_files
-from .interface import display_file_list, prompt_for_file_selection
-from .download import download_selected_files
-from .utils import ensure_dir_exists
+# Handle imports differently when run as script vs. as module
+if __name__ == "__main__":
+    # Add the parent directory to sys.path for direct script execution
+    parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+    sys.path.insert(0, parent_dir)
+    
+    from src.download_videos.browser import setup_browser, authenticate_with_selenium
+    from src.download_videos.sharepoint import find_all_files
+    from src.download_videos.interface import display_file_list, prompt_for_file_selection
+    from src.download_videos.download import download_selected_files
+    from src.download_videos.utils import ensure_dir_exists
+else:
+    # Use relative imports when imported as a module
+    from .browser import setup_browser, authenticate_with_selenium
+    from .sharepoint import find_all_files
+    from .interface import display_file_list, prompt_for_file_selection
+    from .download import download_selected_files
+    from .utils import ensure_dir_exists
 
 # Configure logging
 logging.basicConfig(
@@ -108,3 +121,6 @@ def main():
         # Always close the browser
         if browser:
             browser.quit()
+
+if __name__ == "__main__":
+    sys.exit(main())
