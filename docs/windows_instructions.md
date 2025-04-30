@@ -77,7 +77,7 @@ This script automatically:
 
 ```bash
 # With virtual environment activated
-python download_models.py
+python ./src/download_models.py
 ```
 
 ---
@@ -106,22 +106,16 @@ You can download videos from SharePoint using the included browser automation to
 
 ```bash
 # Basic usage
-python -m download_videos --url "https://your-sharepoint-site.com/folder-with-videos"
+python src/download_videos/main.py --url "https://your-sharepoint-site.com/folder-with-videos"
 
 # Save to a specific directory
-python -m download_videos --url "https://your-sharepoint-site.com/folder-with-videos" --output-dir "./my-videos"
+python src/download_videos/main.py --url "https://your-sharepoint-site.com/folder-with-videos" --output-dir "./my-videos"
 
 # Just list files without downloading
-python -m download_videos --url "https://your-sharepoint-site.com/folder-with-videos" --list-only
+python src/download_videos/main.py --url "https://your-sharepoint-site.com/folder-with-videos" --list-only
 
 # Enable debug mode for troubleshooting
-python -m download_videos --url "https://your-sharepoint-site.com/folder-with-videos" --debug
+python src/download_videos/main.py --url "https://your-sharepoint-site.com/folder-with-videos" --debug
 ```
-
-This will:
-1. Open a browser window for SharePoint authentication
-2. Find all available files in the specified folder
-3. Present you with a list of files to choose from
-4. Download your selected files
 
 **Note:** The tool requires authentication to SharePoint. You'll need to sign in through the browser window that opens.

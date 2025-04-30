@@ -90,7 +90,7 @@ This script automatically:
 ### Option 2: Manual download
 
 ```bash
-python download_models.py
+python src/download_models.py
 ```
 
 ---
@@ -123,16 +123,16 @@ You can download videos from SharePoint using the included browser automation to
 
 ```bash
 # Basic usage
-python -m download_videos --url "https://your-sharepoint-site.com/folder-with-videos"
+python src/download_videos/main.py --url "https://your-sharepoint-site.com/folder-with-videos"
 
 # Save to a specific directory
-python -m download_videos --url "https://your-sharepoint-site.com/folder-with-videos" --output-dir "./my-videos"
+python src/download_videos/main.py --url "https://your-sharepoint-site.com/folder-with-videos" --output-dir "./my-videos"
 
 # Just list files without downloading
-python -m download_videos --url "https://your-sharepoint-site.com/folder-with-videos" --list-only
+python src/download_videos/main.py --url "https://your-sharepoint-site.com/folder-with-videos" --list-only
 
 # Enable debug mode for troubleshooting
-python -m download_videos --url "https://your-sharepoint-site.com/folder-with-videos" --debug
+python src/download_videos/main.py --url "https://your-sharepoint-site.com/folder-with-videos" --debug
 ```
 
 This will:
