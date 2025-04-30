@@ -28,7 +28,7 @@ if (-not (Test-Path ".\models\downloaded")) {
 
 # Run the download script
 Write-Host "`n[5/5] Downloading models..." -ForegroundColor Green
-python download_models.py
+python .\src\download_models.py
 
 Write-Host "`n✅ Download process completed successfully!" -ForegroundColor Green
 Write-Host "You can now use the models for video data processing." -ForegroundColor Green

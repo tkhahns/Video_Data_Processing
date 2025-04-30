@@ -33,7 +33,7 @@ mkdir -p ./models/downloaded
 
 # Run the download script
 echo -e "\n[5/5] Downloading models..."
-python download_models.py
+python src/download_models.py
 
 echo -e "\n✅ Download process completed successfully!"
 echo "You can now use the models for video data processing."
