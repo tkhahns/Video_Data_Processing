@@ -13,6 +13,7 @@ import numpy as np
 import torch
 import torchaudio
 from moviepy import VideoFileClip
+import tqdm  # Import tqdm module
 
 # Configure logging
 logging.basicConfig(
@@ -23,9 +24,9 @@ logger = logging.getLogger(__name__)
 
 # Default paths
 DEFAULT_MODELS_DIR = Path("./models/downloaded")
-DEFAULT_OUTPUT_DIR = Path("./data/separated_speech")
-DEFAULT_VIDEOS_DIR = Path("./data/videos")  # Default videos directory
-DEFAULT_MODEL = "sepformer"  # Default model from our model list
+DEFAULT_OUTPUT_DIR = Path("./output/separated_speech")  # Changed output location
+DEFAULT_VIDEOS_DIR = Path("./data/videos")
+DEFAULT_MODEL = "sepformer"
 DEFAULT_CHUNK_SIZE = 10  # Default chunk size in seconds
 
 def ensure_dir_exists(directory):
@@ -33,6 +34,24 @@ def ensure_dir_exists(directory):
     if not os.path.exists(directory):
         os.makedirs(directory)
         logger.info(f"Created directory: {directory}")
+
+def convert_wav_to_mp3(wav_path, mp3_path):
+    """Convert WAV file to MP3 format using pydub."""
+    try:
+        from pydub import AudioSegment
+        audio = AudioSegment.from_wav(wav_path)
+        audio.export(mp3_path, format="mp3", bitrate="192k")
+        return True
+    except ImportError:
+        logger.warning("Pydub not installed, trying ffmpeg directly...")
+        try:
+            # Try using ffmpeg directly
+            cmd = ["ffmpeg", "-y", "-i", wav_path, "-b:a", "192k", mp3_path]
+            subprocess.run(cmd, check=True, capture_output=True)
+            return True
+        except (subprocess.SubprocessError, FileNotFoundError) as e:
+            logger.error(f"Error converting to MP3: {e}")
+            return False
 
 def extract_audio_from_video(video_path, output_path=None, sample_rate=16000):
     """Extract audio from video file."""
@@ -177,23 +196,9 @@ def separate_speech(audio, model):
                 logger.warning(f"Unexpected audio shape: {audio.shape}, attempting to reshape")
                 waveform = audio.view(1, -1)  # Reshape to [1, time]
             
-            # Log shapes for debugging
-            logger.debug(f"Input shape: {audio.shape}, Model input shape: {waveform.shape}")
-            
-            # Check memory
-            mem_before = get_memory_usage()
-            logger.debug(f"Memory before separation: {mem_before:.2f} MB")
-            
             # Perform separation
             est_sources = model.separate_batch(waveform)
             torch.cuda.synchronize() if torch.cuda.is_available() else None
-            
-            # Check memory after separation
-            mem_after = get_memory_usage()
-            logger.debug(f"Memory after separation: {mem_after:.2f} MB (delta: {mem_after-mem_before:.2f} MB)")
-            
-            # Log shape for debugging
-            logger.debug(f"Estimated sources shape: {est_sources.shape}")
             
             # est_sources will have shape [batch, n_sources, time]
             # We'll take the first source as the speech and ensure it has shape [1, time]
@@ -217,9 +222,6 @@ def separate_speech(audio, model):
                 # Try to fix the shape
                 if separated_speech.numel() == waveform.shape[1]:
                     separated_speech = separated_speech.view(1, waveform.shape[1])
-            
-            # Final check
-            logger.debug(f"Final separated speech shape: {separated_speech.shape}")
             
             # Clean up to free memory
             del est_sources
@@ -263,86 +265,82 @@ def separate_speech_chunked(audio, model, sample_rate, chunk_size_sec=DEFAULT_CH
         # Initialize output tensor for the full separated speech
         separated_speech = torch.zeros((1, audio_length), device=audio.device)
         
+        # Calculate number of chunks for progress bar
+        total_chunks = (audio_length + (chunk_size - overlap_size) - 1) // (chunk_size - overlap_size)
+        
         # Process audio in chunks with overlap
-        for start_idx in range(0, audio_length, chunk_size - overlap_size):
-            # Clear memory from previous iterations
-            torch.cuda.empty_cache() if torch.cuda.is_available() else None
-            gc.collect()
-            
-            # Calculate end index for this chunk
-            end_idx = min(start_idx + chunk_size, audio_length)
-            
-            # Extract chunk
-            chunk = audio[:, start_idx:end_idx]
-            chunk_length = chunk.shape[1]
-            logger.debug(f"Processing chunk {start_idx//sample_rate}s-{end_idx//sample_rate}s ({chunk_length/sample_rate:.1f}s)")
-            
-            # Process chunk
-            mem_before = get_memory_usage()
-            separated_chunk = separate_speech(chunk, model)
-            mem_after = get_memory_usage()
-            
-            if separated_chunk is None:
-                logger.error(f"Failed to separate chunk {start_idx//sample_rate}s-{end_idx//sample_rate}s")
-                continue
-            
-            # Verify shape of separated_chunk
-            if separated_chunk.shape[1] != chunk_length:
-                logger.warning(f"Shape mismatch: chunk {chunk.shape}, separated {separated_chunk.shape}")
-                # Try to reshape if possible
-                if separated_chunk.numel() == chunk_length:
-                    separated_chunk = separated_chunk.view(1, chunk_length)
-                elif separated_chunk.numel() < chunk_length:
-                    # Pad with zeros
-                    logger.warning(f"Padding output to match expected length")
-                    padded = torch.zeros((1, chunk_length), device=separated_chunk.device)
-                    padded[:, :separated_chunk.numel()] = separated_chunk.view(1, -1)
-                    separated_chunk = padded
-                elif separated_chunk.numel() > chunk_length:
-                    # Trim
-                    logger.warning(f"Trimming output to match expected length")
-                    separated_chunk = separated_chunk[:, :chunk_length]
-            
-            logger.debug(f"Chunk processed. Memory: {mem_after:.2f}MB (delta: {mem_after-mem_before:.2f}MB)")
-            logger.debug(f"Separated chunk shape: {separated_chunk.shape}")
-            
-            # Apply cross-fade for overlapping regions (except for first chunk)
-            if start_idx > 0:
-                # Calculate overlap region
-                overlap_start = start_idx
-                overlap_end = min(start_idx + overlap_size, audio_length)
-                overlap_length = overlap_end - overlap_start
+        with tqdm.tqdm(total=total_chunks, desc="Separating speech", unit="chunk") as pbar:
+            for start_idx in range(0, audio_length, chunk_size - overlap_size):
+                # Clear memory from previous iterations
+                torch.cuda.empty_cache() if torch.cuda.is_available() else None
+                gc.collect()
                 
-                # Ensure we don't try to access beyond the length of separated_chunk
-                if overlap_length > separated_chunk.shape[1]:
-                    logger.warning(f"Overlap length {overlap_length} exceeds separated chunk length {separated_chunk.shape[1]}")
-                    overlap_length = separated_chunk.shape[1]
+                # Calculate end index for this chunk
+                end_idx = min(start_idx + chunk_size, audio_length)
                 
-                # Create linear cross-fade weights
-                fade_in = torch.linspace(0, 1, overlap_length).view(1, -1).to(audio.device)
-                fade_out = 1 - fade_in
+                # Extract chunk
+                chunk = audio[:, start_idx:end_idx]
+                chunk_length = chunk.shape[1]
                 
-                # Apply cross-fade in the overlap region
-                try:
-                    separated_speech[:, overlap_start:overlap_end] = (
-                        fade_out * separated_speech[:, overlap_start:overlap_end] + 
-                        fade_in * separated_chunk[:, :overlap_length]
-                    )
+                # Process chunk
+                separated_chunk = separate_speech(chunk, model)
+                
+                if separated_chunk is None:
+                    logger.error(f"Failed to separate chunk at {start_idx//sample_rate}s-{end_idx//sample_rate}s")
+                    continue
+                
+                # Verify shape of separated_chunk
+                if separated_chunk.shape[1] != chunk_length:
+                    # Try to reshape if possible
+                    if separated_chunk.numel() == chunk_length:
+                        separated_chunk = separated_chunk.view(1, chunk_length)
+                    elif separated_chunk.numel() < chunk_length:
+                        # Pad with zeros
+                        padded = torch.zeros((1, chunk_length), device=separated_chunk.device)
+                        padded[:, :separated_chunk.numel()] = separated_chunk.view(1, -1)
+                        separated_chunk = padded
+                    elif separated_chunk.numel() > chunk_length:
+                        # Trim
+                        separated_chunk = separated_chunk[:, :chunk_length]
+                
+                # Apply cross-fade for overlapping regions (except for first chunk)
+                if start_idx > 0:
+                    # Calculate overlap region
+                    overlap_start = start_idx
+                    overlap_end = min(start_idx + overlap_size, audio_length)
+                    overlap_length = overlap_end - overlap_start
                     
-                    # Copy the non-overlapping part
-                    remaining_length = separated_chunk.shape[1] - overlap_length
-                    if remaining_length > 0 and (overlap_end + remaining_length) <= audio_length:
-                        separated_speech[:, overlap_end:overlap_end+remaining_length] = separated_chunk[:, overlap_length:overlap_length+remaining_length]
-                except RuntimeError as e:
-                    logger.error(f"Error merging chunks at overlap region: {e}")
-                    # Try an alternative approach - just copy without cross-fade
-                    logger.warning("Falling back to direct copy without cross-fade")
-                    copy_length = min(end_idx - start_idx, separated_chunk.shape[1])
-                    separated_speech[:, start_idx:start_idx+copy_length] = separated_chunk[:, :copy_length]
-            else:
-                # First chunk, just copy directly
-                copy_length = min(end_idx, separated_chunk.shape[1])
-                separated_speech[:, :copy_length] = separated_chunk[:, :copy_length]
+                    # Ensure we don't try to access beyond the length of separated_chunk
+                    if overlap_length > separated_chunk.shape[1]:
+                        overlap_length = separated_chunk.shape[1]
+                    
+                    # Create linear cross-fade weights
+                    fade_in = torch.linspace(0, 1, overlap_length).view(1, -1).to(audio.device)
+                    fade_out = 1 - fade_in
+                    
+                    # Apply cross-fade in the overlap region
+                    try:
+                        separated_speech[:, overlap_start:overlap_end] = (
+                            fade_out * separated_speech[:, overlap_start:overlap_end] + 
+                            fade_in * separated_chunk[:, :overlap_length]
+                        )
+                        
+                        # Copy the non-overlapping part
+                        remaining_length = separated_chunk.shape[1] - overlap_length
+                        if remaining_length > 0 and (overlap_end + remaining_length) <= audio_length:
+                            separated_speech[:, overlap_end:overlap_end+remaining_length] = separated_chunk[:, overlap_length:overlap_length+remaining_length]
+                    except RuntimeError as e:
+                        logger.error(f"Error merging chunks at overlap region: {e}")
+                        # Try an alternative approach - just copy without cross-fade
+                        copy_length = min(end_idx - start_idx, separated_chunk.shape[1])
+                        separated_speech[:, start_idx:start_idx+copy_length] = separated_chunk[:, :copy_length]
+                else:
+                    # First chunk, just copy directly
+                    copy_length = min(end_idx, separated_chunk.shape[1])
+                    separated_speech[:, :copy_length] = separated_chunk[:, :copy_length]
+                
+                # Update progress bar
+                pbar.update(1)
         
         return separated_speech
         
@@ -357,7 +355,6 @@ def separate_speech_chunked(audio, model, sample_rate, chunk_size_sec=DEFAULT_CH
         return None
     except RuntimeError as e:
         if "out of memory" in str(e).lower():
-            logger.error(f"Out of memory error: {e}")
             # Try with smaller chunk size
             if chunk_size_sec > 2:
                 logger.info(f"Retrying with smaller chunk size ({chunk_size_sec/2}s)")
@@ -368,24 +365,46 @@ def separate_speech_chunked(audio, model, sample_rate, chunk_size_sec=DEFAULT_CH
             if chunk_size_sec > 2:
                 logger.info(f"Retrying with smaller chunk size ({chunk_size_sec/2}s) and no overlap")
                 return separate_speech_chunked(audio, model, sample_rate, chunk_size_sec=chunk_size_sec/2, overlap_sec=0)
-            return None
+        return None
     except Exception as e:
         logger.error(f"Error during chunked speech separation: {e}")
         return None
 
 def save_audio(waveform, sample_rate, output_path):
     """Save audio waveform to file."""
-    logger.info(f"Saving separated speech to {output_path}")
-    
     try:
+        # Ensure output path has .wav extension first (for torchaudio)
+        if not output_path.lower().endswith('.wav'):
+            wav_path = output_path + '.wav'
+        else:
+            wav_path = output_path
+            output_path = output_path[:-4]  # Remove .wav extension
+        
+        # Ensure MP3 extension
+        mp3_path = output_path + '.mp3'
+        
         # Ensure waveform has the right shape
         if waveform.dim() == 1:
             waveform = waveform.unsqueeze(0)
         
-        # Save as WAV
-        torchaudio.save(output_path, waveform, sample_rate)
-        return True
-    
+        # First save as WAV (temporary)
+        torchaudio.save(wav_path, waveform, sample_rate)
+        
+        # Convert to MP3
+        logger.info(f"Converting to MP3: {mp3_path}")
+        success = convert_wav_to_mp3(wav_path, mp3_path)
+        
+        # Remove temporary WAV file
+        if os.path.exists(wav_path):
+            os.remove(wav_path)
+        
+        if success:
+            logger.info(f"Saved separated speech to {mp3_path}")
+            return True
+        else:
+            logger.error("Failed to convert to MP3 format")
+            return False
+            
     except Exception as e:
         logger.error(f"Error saving audio: {e}")
         return False
@@ -394,45 +413,56 @@ def process_file(video_path, output_dir, model_name, models_dir, chunk_size_sec=
     """Process a single video file for speech separation."""
     video_filename = os.path.basename(video_path)
     video_name = os.path.splitext(video_filename)[0]
-    output_path = os.path.join(output_dir, f"{video_name}_speech.wav")
+    output_path = os.path.join(output_dir, f"{video_name}_speech")  # No extension, added later
     
     # Extract audio from video
-    waveform, sample_rate, temp_audio_path = extract_audio_from_video(video_path)
-    if waveform is None:
-        return False
-    
-    # Get audio file size and log
-    audio_duration = waveform.shape[1] / sample_rate
-    logger.info(f"Audio duration: {audio_duration:.2f} seconds")
-    
-    # Load separation model
-    model = load_speech_separation_model(model_name, models_dir)
-    if model is None:
+    logger.info(f"Processing {video_filename}")
+    with tqdm.tqdm(total=4, desc=f"Processing {video_filename}", unit="step") as pbar:
+        pbar.set_description("Extracting audio")
+        waveform, sample_rate, temp_audio_path = extract_audio_from_video(video_path)
+        if waveform is None:
+            return False
+        pbar.update(1)
+        
+        # Get audio file size and log
+        audio_duration = waveform.shape[1] / sample_rate
+        logger.info(f"Audio duration: {audio_duration:.2f} seconds")
+        
+        # Load separation model
+        pbar.set_description("Loading model")
+        model = load_speech_separation_model(model_name, models_dir)
+        if model is None:
+            if temp_audio_path and os.path.exists(temp_audio_path):
+                os.remove(temp_audio_path)
+            return False
+        pbar.update(1)
+        
+        # Separate speech using chunked processing
+        pbar.set_description("Separating speech")
+        separated_speech = separate_speech_chunked(waveform, model, sample_rate, chunk_size_sec)
+        
+        # Clean up model to free memory
+        del model
+        gc.collect()
+        torch.cuda.empty_cache() if torch.cuda.is_available() else None
+        
+        if separated_speech is None:
+            if temp_audio_path and os.path.exists(temp_audio_path):
+                os.remove(temp_audio_path)
+            return False
+        pbar.update(1)
+        
+        # Save separated speech
+        pbar.set_description("Saving MP3 audio")
+        success = save_audio(separated_speech, sample_rate, output_path)
+        
+        # Clean up temp file
         if temp_audio_path and os.path.exists(temp_audio_path):
             os.remove(temp_audio_path)
-        return False
-    
-    # Separate speech using chunked processing
-    separated_speech = separate_speech_chunked(waveform, model, sample_rate, chunk_size_sec)
-    
-    # Clean up model to free memory
-    del model
-    gc.collect()
-    torch.cuda.empty_cache() if torch.cuda.is_available() else None
-    
-    if separated_speech is None:
-        if temp_audio_path and os.path.exists(temp_audio_path):
-            os.remove(temp_audio_path)
-        return False
-    
-    # Save separated speech
-    success = save_audio(separated_speech, sample_rate, output_path)
-    
-    # Clean up temp file
-    if temp_audio_path and os.path.exists(temp_audio_path):
-        os.remove(temp_audio_path)
-    
-    return success
+        
+        pbar.update(1)
+        
+        return success
 
 def find_video_files(input_paths=None, recursive=False):
     """Find video files in the specified paths or default directory."""
@@ -577,15 +607,22 @@ def main():
     try:
         import speechbrain
         import moviepy
-        # Try to import psutil for memory monitoring
+        import tqdm
+        # Try to import pydub for MP3 conversion
         try:
-            import psutil
+            from pydub import AudioSegment
         except ImportError:
-            logger.warning("psutil not installed. Memory monitoring will be limited.")
-            logger.warning("Install with: pip install psutil")
+            # Check if ffmpeg is available as fallback
+            try:
+                subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True)
+                logger.info("Using ffmpeg for MP3 conversion")
+            except (subprocess.SubprocessError, FileNotFoundError):
+                logger.warning("Neither pydub nor ffmpeg found. MP3 conversion may not work.")
+                logger.warning("Install with: pip install pydub")
+                logger.warning("Or install ffmpeg: apt install ffmpeg / brew install ffmpeg")
     except ImportError as e:
         logger.error(f"Missing dependency: {e}")
-        logger.error("Please install required packages: pip install speechbrain moviepy torchaudio psutil")
+        logger.error("Please install required packages: pip install speechbrain moviepy torchaudio tqdm pydub")
         return 1
     
     # Collect video files - either from arguments or interactive selection
@@ -608,19 +645,29 @@ def main():
     
     # Process each video file
     successful = 0
-    for video_path in video_files:
-        logger.info(f"Processing {video_path}")
-        # Clear memory before processing each file
-        gc.collect()
-        torch.cuda.empty_cache() if torch.cuda.is_available() else None
-        
-        if process_file(video_path, args.output_dir, args.model, args.models_dir, args.chunk_size):
-            successful += 1
-        else:
-            logger.error(f"Failed to process {video_path}")
+    total_files = len(video_files)
     
-    logger.info(f"Processed {successful}/{len(video_files)} videos successfully")
-    return 0 if successful == len(video_files) else 1
+    # Show overall progress
+    with tqdm.tqdm(total=total_files, desc="Overall progress", unit="file") as overall_pbar:
+        for i, video_path in enumerate(video_files):
+            overall_pbar.set_description(f"File {i+1}/{total_files}")
+            
+            # Clear memory before processing each file
+            gc.collect()
+            torch.cuda.empty_cache() if torch.cuda.is_available() else None
+            
+            if process_file(video_path, args.output_dir, args.model, args.models_dir, args.chunk_size):
+                successful += 1
+                overall_pbar.set_postfix(success_rate=f"{successful}/{i+1}")
+            else:
+                logger.error(f"Failed to process {os.path.basename(video_path)}")
+            
+            overall_pbar.update(1)
+    
+    print(f"\n✅ Processed {successful}/{total_files} videos successfully")
+    print(f"🎵 MP3 files saved to: {args.output_dir}")
+    
+    return 0 if successful == total_files else 1
 
 if __name__ == "__main__":
     sys.exit(main())
