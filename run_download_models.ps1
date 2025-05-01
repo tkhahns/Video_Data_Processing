@@ -57,7 +57,7 @@ if (-not (Test-Path ".\models\downloaded")) {
 }
 
 # Prepare download arguments
-$downloadArgs = @(".\src\download_models.py")
+$downloadArgs = @("-m", "src.download_models")
 
 if ($modelType) {
     $downloadArgs += "--model-types"

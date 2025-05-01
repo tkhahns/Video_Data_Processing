@@ -67,7 +67,7 @@ echo -e "\n[4/5] Creating models directory if needed..."
 mkdir -p ./models/downloaded
 
 # Prepare download arguments
-download_args=("./src/download_models.py")
+download_args=("src.download_models")
 
 if [ -n "$model_type" ]; then
     download_args+=("--model-types" "$model_type")
@@ -83,7 +83,7 @@ fi
 
 # Run the download script
 echo -e "\n[5/5] Downloading models..."
-python "${download_args[@]}"
+python -m "${download_args[@]}"
 
 echo -e "\n✅ Download process completed!"
 echo "You can now use the models for video data processing."
