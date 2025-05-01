@@ -212,3 +212,61 @@ python src/download_videos/main.py --url "https://your-sharepoint-site.com/folde
 ```
 
 **Note:** The tool requires authentication to SharePoint. You'll need to sign in through the browser window that opens.
+
+---
+
+## Extract Speech from Videos
+
+You can extract and separate speech from video files using the provided speech separation tool:
+
+### Option 1: Using the convenience script (recommended)
+
+```bash
+# Run the script with no arguments (interactive mode)
+.\run_separate_speech.ps1
+
+# Or process specific video files
+.\run_separate_speech.ps1 path\to\video.mp4
+
+# Additional options:
+.\run_separate_speech.ps1 --output-dir "./my-speech-output" path\to\video.mp4
+.\run_separate_speech.ps1 --file-type wav  # Choose output format: wav, mp3, or both
+.\run_separate_speech.ps1 --model sepformer
+```
+
+This script automatically:
+- Activates the virtual environment
+- Handles dependencies
+- Processes videos through the speech separation model
+
+### Option 2: Running as a module
+
+```bash
+# Using Python module syntax (interactive mode)
+python -m src.separate_speech --interactive
+
+# Process specific video files
+python -m src.separate_speech path\to\video.mp4
+
+# Additional options
+python -m src.separate_speech path\to\video.mp4 --output-dir "./my-speech-output"
+python -m src.separate_speech path\to\video.mp4 --file-type wav
+```
+
+### Option 3: Running the Python script directly
+
+```bash
+# Basic usage
+python src/separate_speech/__main__.py path\to\video.mp4
+
+# Advanced options
+python src/separate_speech/__main__.py --output-dir "./my-speech-output" --file-type both path\to\video.mp4
+python src/separate_speech/__main__.py --model sepformer --chunk-size 5 path\to\video.mp4
+```
+
+The tool will:
+1. Extract audio from the video files
+2. Process through speech separation model
+3. Save the isolated speech as audio files (WAV and/or MP3)
+
+**Note:** The first run will download the speech separation model (approximately 1GB), which may take some time depending on your internet connection.
