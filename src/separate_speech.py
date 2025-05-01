@@ -35,8 +35,24 @@ def ensure_dir_exists(directory):
         os.makedirs(directory)
         logger.info(f"Created directory: {directory}")
 
+def check_ffmpeg_dependencies():
+    """Check if ffmpeg and ffprobe are installed."""
+    try:
+        subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True)
+        subprocess.run(["ffprobe", "-version"], capture_output=True, check=True)
+        logger.info("ffmpeg and ffprobe are available.")
+        return True
+    except (subprocess.SubprocessError, FileNotFoundError):
+        logger.error("ffmpeg or ffprobe is not installed. Please install them to enable MP3 conversion.")
+        logger.error("Install ffmpeg using: apt install ffmpeg (Linux) or brew install ffmpeg (macOS).")
+        return False
+
 def convert_wav_to_mp3(wav_path, mp3_path):
-    """Convert WAV file to MP3 format using pydub."""
+    """Convert WAV file to MP3 format using pydub or ffmpeg."""
+    if not check_ffmpeg_dependencies():
+        logger.error("MP3 conversion skipped due to missing ffmpeg/ffprobe.")
+        return False
+
     try:
         from pydub import AudioSegment
         audio = AudioSegment.from_wav(wav_path)
@@ -196,6 +212,9 @@ def separate_speech(audio, model):
                 logger.warning(f"Unexpected audio shape: {audio.shape}, attempting to reshape")
                 waveform = audio.view(1, -1)  # Reshape to [1, time]
             
+            # Store expected output length
+            expected_length = waveform.shape[1]
+            
             # Perform separation
             est_sources = model.separate_batch(waveform)
             torch.cuda.synchronize() if torch.cuda.is_available() else None
@@ -213,15 +232,42 @@ def separate_speech(audio, model):
                 separated_speech = est_sources.unsqueeze(0)  # Shape [1, time]
             else:
                 logger.error(f"Unexpected output shape from model: {est_sources.shape}")
-                return None
+                logger.warning("Using original audio as fallback")
+                return audio
             
             # Ensure output has the correct shape [1, time]
             # This should match the chunk's time dimension
-            if separated_speech.shape[1] != waveform.shape[1]:
+            if separated_speech.shape[1] != expected_length:
                 logger.warning(f"Output shape {separated_speech.shape} doesn't match input shape {waveform.shape}")
+                
+                # Critical: Handle severe shape mismatch - if output is very small compared to input
+                # This is likely causing the silent output issue
+                if separated_speech.shape[1] < expected_length * 0.1:  # If output is less than 10% of expected
+                    logger.warning("Severe shape mismatch detected. Using original audio as fallback.")
+                    return audio  # Use the original audio instead
+                
                 # Try to fix the shape
                 if separated_speech.numel() == waveform.shape[1]:
                     separated_speech = separated_speech.view(1, waveform.shape[1])
+                elif separated_speech.shape[1] < waveform.shape[1]:
+                    # Pad with zeros
+                    logger.warning("Output shorter than expected. Padding with zeros.")
+                    padded = torch.zeros((1, waveform.shape[1]), device=separated_speech.device)
+                    padded[:, :separated_speech.shape[1]] = separated_speech
+                    separated_speech = padded
+            
+            # Check if the output is mostly silence (zeros or very low values)
+            if separated_speech.abs().mean() < 0.001:  # Check if average amplitude is very low
+                logger.warning("Separated speech appears to be mostly silence. Using original audio instead.")
+                return audio  # Use the original audio instead
+                
+            # Normalize the output to ensure it has sufficient amplitude
+            max_val = separated_speech.abs().max()
+            if max_val > 0:
+                gain_factor = min(0.9 / max_val, 3.0)  # Boost amplitude but avoid excessive gain
+                if gain_factor > 1.1:  # Only apply if gain is significant
+                    logger.info(f"Applying gain factor of {gain_factor:.2f} to increase volume")
+                    separated_speech = separated_speech * gain_factor
             
             # Clean up to free memory
             del est_sources
@@ -370,46 +416,65 @@ def separate_speech_chunked(audio, model, sample_rate, chunk_size_sec=DEFAULT_CH
         logger.error(f"Error during chunked speech separation: {e}")
         return None
 
-def save_audio(waveform, sample_rate, output_path):
-    """Save audio waveform to file."""
+def save_audio(waveform, sample_rate, output_path, file_type="mp3"):
+    """Save audio waveform to file.
+    
+    Args:
+        waveform: The audio data to save
+        sample_rate: Sample rate of the audio
+        output_path: Path to save the audio without extension
+        file_type: Type of file to save - "wav", "mp3", or both ("both")
+    """
     try:
-        # Ensure output path has .wav extension first (for torchaudio)
-        if not output_path.lower().endswith('.wav'):
-            wav_path = output_path + '.wav'
-        else:
-            wav_path = output_path
-            output_path = output_path[:-4]  # Remove .wav extension
+        # Ensure output path has no extension
+        if output_path.lower().endswith('.wav') or output_path.lower().endswith('.mp3'):
+            output_path = os.path.splitext(output_path)[0]
         
-        # Ensure MP3 extension
+        # Define paths
+        wav_path = output_path + '.wav'
         mp3_path = output_path + '.mp3'
         
         # Ensure waveform has the right shape
         if waveform.dim() == 1:
             waveform = waveform.unsqueeze(0)
         
-        # First save as WAV (temporary)
+        # Check audio statistics before saving
+        audio_max = waveform.abs().max().item()
+        audio_mean = waveform.abs().mean().item()
+        logger.info(f"Audio statistics: max_amplitude={audio_max:.6f}, mean_amplitude={audio_mean:.6f}")
+        
+        if audio_max < 0.01:
+            logger.warning("WARNING: Audio amplitude is very low, output may be inaudible!")
+        
+        # Always save as WAV (it's needed for MP3 conversion anyway)
+        logger.info(f"Saving WAV file: {wav_path}")
         torchaudio.save(wav_path, waveform, sample_rate)
         
-        # Convert to MP3
-        logger.info(f"Converting to MP3: {mp3_path}")
-        success = convert_wav_to_mp3(wav_path, mp3_path)
+        # Convert to MP3 if requested
+        if file_type.lower() in ["mp3", "both"]:
+            logger.info(f"Converting to MP3: {mp3_path}")
+            success = convert_wav_to_mp3(wav_path, mp3_path)
+            
+            if success:
+                logger.info(f"Successfully saved MP3: {mp3_path}")
+                # Remove WAV file if not keeping both
+                if file_type.lower() != "both" and file_type.lower() != "wav":
+                    os.remove(wav_path)
+                    logger.info("Removed temporary WAV file")
+            else:
+                logger.warning(f"MP3 conversion failed, keeping WAV file: {wav_path}")
         
-        # Remove temporary WAV file
-        if os.path.exists(wav_path):
-            os.remove(wav_path)
-        
-        if success:
-            logger.info(f"Saved separated speech to {mp3_path}")
-            return True
-        else:
-            logger.error("Failed to convert to MP3 format")
-            return False
+        # Log which files were kept
+        if file_type.lower() == "wav" or file_type.lower() == "both" or (file_type.lower() == "mp3" and not success):
+            logger.info(f"Saved WAV file: {wav_path}")
+            
+        return True
             
     except Exception as e:
         logger.error(f"Error saving audio: {e}")
         return False
 
-def process_file(video_path, output_dir, model_name, models_dir, chunk_size_sec=DEFAULT_CHUNK_SIZE):
+def process_file(video_path, output_dir, model_name, models_dir, chunk_size_sec=DEFAULT_CHUNK_SIZE, file_type="mp3"):
     """Process a single video file for speech separation."""
     video_filename = os.path.basename(video_path)
     video_name = os.path.splitext(video_filename)[0]
@@ -453,8 +518,9 @@ def process_file(video_path, output_dir, model_name, models_dir, chunk_size_sec=
         pbar.update(1)
         
         # Save separated speech
-        pbar.set_description("Saving MP3 audio")
-        success = save_audio(separated_speech, sample_rate, output_path)
+        file_type_desc = "WAV" if file_type == "wav" else "MP3" if file_type == "mp3" else "WAV+MP3"
+        pbar.set_description(f"Saving {file_type_desc} audio")
+        success = save_audio(separated_speech, sample_rate, output_path, file_type)
         
         # Clean up temp file
         if temp_audio_path and os.path.exists(temp_audio_path):
@@ -503,7 +569,7 @@ def select_videos_interactively(videos_dir=None, recursive=False):
     
     if not all_videos:
         logger.error(f"No video files found in {input_paths[0]}")
-        return []
+        return [], None
     
     # Display the list of available videos
     print("\n=== Available Video Files ===")
@@ -522,10 +588,11 @@ def select_videos_interactively(videos_dir=None, recursive=False):
         selection = input("\nSelect videos to process: ").strip().lower()
         
         if selection == 'q':
-            return []
+            return [], None
             
         if selection == 'all':
-            return all_videos
+            selected_videos = all_videos
+            break
         
         try:
             # Parse comma-separated indices
@@ -541,11 +608,38 @@ def select_videos_interactively(videos_dir=None, recursive=False):
             else:
                 # If no break occurred in the loop
                 if selected_videos:
-                    return selected_videos
+                    break
                 print("No valid videos selected. Please try again.")
                 
         except ValueError:
             print("Error: Please enter valid numbers separated by commas")
+    
+    # Now prompt for file type selection
+    print("\n=== Select Output File Format ===")
+    print("[1] MP3 format (default)")
+    print("[2] WAV format")
+    print("[3] Both WAV and MP3")
+    
+    while True:
+        file_type_selection = input("\nSelect file format [1-3]: ").strip()
+        
+        if not file_type_selection:
+            # Default to MP3
+            file_type = "mp3"
+            break
+        elif file_type_selection in ["1", "mp3"]:
+            file_type = "mp3"
+            break
+        elif file_type_selection in ["2", "wav"]:
+            file_type = "wav"
+            break
+        elif file_type_selection in ["3", "both"]:
+            file_type = "both"
+            break
+        else:
+            print("Invalid selection. Please enter 1, 2, or 3.")
+    
+    return selected_videos, file_type
 
 def main():
     """Main function."""
@@ -592,8 +686,24 @@ def main():
         default=DEFAULT_CHUNK_SIZE,
         help="Size of audio chunks to process in seconds"
     )
+    parser.add_argument(
+        "--file-type",
+        type=str,
+        choices=["wav", "mp3", "both", "1", "2", "3"],
+        default="mp3",
+        help="Output file format: wav (1), mp3 (2), or both (3)"
+    )
     
     args = parser.parse_args()
+    
+    # Process file type argument
+    file_type = args.file_type
+    if file_type == "1":
+        file_type = "wav"
+    elif file_type == "2":
+        file_type = "mp3"
+    elif file_type == "3":
+        file_type = "both"
     
     # Set debug logging if requested
     if args.debug:
@@ -627,11 +737,12 @@ def main():
     
     # Collect video files - either from arguments or interactive selection
     video_files = []
+    file_type_from_interactive = None
     
     # Use interactive mode if no input args or --interactive flag
     if not args.input or args.interactive:
         # Interactive video selection
-        video_files = select_videos_interactively(
+        video_files, file_type_from_interactive = select_videos_interactively(
             videos_dir=None if not args.input else args.input[0],
             recursive=args.recursive
         )
@@ -642,6 +753,15 @@ def main():
     if not video_files:
         logger.error("No video files selected for processing")
         return 1
+    
+    # Process file type argument - interactive selection overrides command line if provided
+    file_type = file_type_from_interactive or args.file_type
+    if file_type == "1":
+        file_type = "wav"
+    elif file_type == "2":
+        file_type = "mp3"
+    elif file_type == "3":
+        file_type = "both"
     
     # Process each video file
     successful = 0
@@ -656,7 +776,7 @@ def main():
             gc.collect()
             torch.cuda.empty_cache() if torch.cuda.is_available() else None
             
-            if process_file(video_path, args.output_dir, args.model, args.models_dir, args.chunk_size):
+            if process_file(video_path, args.output_dir, args.model, args.models_dir, args.chunk_size, file_type):
                 successful += 1
                 overall_pbar.set_postfix(success_rate=f"{successful}/{i+1}")
             else:
@@ -665,7 +785,15 @@ def main():
             overall_pbar.update(1)
     
     print(f"\n✅ Processed {successful}/{total_files} videos successfully")
-    print(f"🎵 MP3 files saved to: {args.output_dir}")
+    print(f"🎵 Audio files saved to: {args.output_dir}")
+    
+    # Update message based on file type
+    if file_type == "wav":
+        print("Files were saved in WAV format.")
+    elif file_type == "mp3":
+        print("Files were saved in MP3 format.")
+    else:
+        print("Files were saved in both WAV and MP3 formats.")
     
     return 0 if successful == total_files else 1
 
