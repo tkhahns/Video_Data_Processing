@@ -73,11 +73,24 @@ This script automatically:
 - Creates the models directory
 - Downloads all required models
 
-### Option 2: Manual download
+### Option 2: Running as a module
 
 ```bash
 # With virtual environment activated
-python ./src/download_models.py
+python -m src.download_models
+```
+
+### Option 3: Additional options
+
+```bash
+# Download only specific model types
+python -m src.download_models --model-types audio video
+
+# Force re-download of existing models
+python -m src.download_models --force
+
+# Preview what would be downloaded without downloading
+python -m src.download_models --dry-run
 ```
 
 ---

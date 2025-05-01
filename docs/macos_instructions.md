@@ -6,7 +6,7 @@ These instructions will help you set up the environment for the Video Data Proce
 
 ## Prerequisites
 
-Ensure you have **pyenv** installed and Python 3.12.10 set as your global interpreter:
+Ensure you have **pyenv** installed and Python 3.12.10 set as your global interpreter:
 
 ```bash
 # Install pyenv (if not already installed)
@@ -87,10 +87,24 @@ This script automatically:
 - Creates the models directory
 - Downloads all required models
 
-### Option 2: Manual download
+### Option 2: Running as a module
 
 ```bash
-python src/download_models.py
+# With virtual environment activated
+python -m src.download_models
+```
+
+### Option 3: Additional options
+
+```bash
+# Download only specific model types
+python -m src.download_models --model-types audio video
+
+# Force re-download of existing models
+python -m src.download_models --force
+
+# Preview what would be downloaded without downloading
+python -m src.download_models --dry-run
 ```
 
 ---
