@@ -16,9 +16,9 @@ echo -e "\n[2/2] Activating virtual environment..."
 source .venv/bin/activate
 
 # Install required packages if needed
-if ! python -c "import speechbrain" &> /dev/null; then
+if ! python -c "import speechbrain tqdm" &> /dev/null; then
     echo -e "\nInstalling required packages..."
-    pip install speechbrain moviepy torchaudio
+    pip install speechbrain moviepy torchaudio tqdm pydub
 fi
 
 # Help message if --help flag is provided
@@ -26,7 +26,7 @@ if [ "$1" == "--help" ] || [ "$1" == "-h" ]; then
     echo -e "\nUsage: ./run_separate_speech.sh [options] <video_file(s)>"
     echo ""
     echo "Options:"
-    echo "  --output-dir DIR     Directory to save separated speech files"
+    echo "  --output-dir DIR     Directory to save separated speech files (default: ./output/separated_speech)"
     echo "  --model MODEL        Speech separation model to use (sepformer, conv-tasnet)" 
     echo "  --recursive          Process video files in subdirectories recursively"
     echo "  --debug              Enable debug logging"
