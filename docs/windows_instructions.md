@@ -52,6 +52,49 @@ pip install huggingface-hub
 
 ---
 
+## Install ffmpeg
+
+ffmpeg is required for audio processing and conversion. There are two ways to install it:
+
+### Option 1: Using Chocolatey (recommended if you have Chocolatey installed)
+
+```bash
+# Install Chocolatey first if you don't have it
+# Run this in an administrator PowerShell
+# Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+
+# Then install ffmpeg
+choco install ffmpeg
+```
+
+### Option 2: Manual installation
+
+1. Download the latest static build from [ffmpeg.org](https://ffmpeg.org/download.html#build-windows)
+2. Extract the ZIP file to a folder (e.g., `C:\ffmpeg`)
+3. Add ffmpeg to your PATH:
+   - Search for "Environment Variables" in Windows search
+   - Click "Edit the system environment variables"
+   - Click "Environment Variables"
+   - Under "System variables", find "Path" and click "Edit"
+   - Click "New" and add the path to the bin folder (e.g., `C:\ffmpeg\bin`)
+   - Click OK on all windows
+
+### Option 3: Install Python wrapper only
+
+You can also install just the Python wrapper, which will try to use ffmpeg if it's available:
+
+```bash
+pip install ffmpeg-python pydub
+```
+
+To verify ffmpeg is installed correctly:
+
+```bash
+ffmpeg -version
+```
+
+---
+
 ## Fetch all models
 
 You can download the required models using either of these methods:
