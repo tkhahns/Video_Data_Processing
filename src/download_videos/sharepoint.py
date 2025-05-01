@@ -5,8 +5,14 @@ import logging
 import time
 import urllib.parse
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException, StaleElementReferenceException
 
 logger = logging.getLogger(__name__)
+
+# Define common video file extensions
+VIDEO_EXTENSIONS = ['.MP4', '.MOV', '.AVI', '.WMV', '.MKV', '.M4V', '.WEBM', '.FLV', '.3GP']
 
 def find_all_files(browser):
     """Find all files in the current SharePoint page using classic view selectors."""
@@ -14,6 +20,15 @@ def find_all_files(browser):
         # Wait for the page to fully load
         logger.info("Waiting for SharePoint page to fully load...")
         time.sleep(3)  # Give the page some time to initialize
+        
+        try:
+            # Try to wait for a more specific element to ensure page is loaded
+            WebDriverWait(browser, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "div.ms-List-cell, a.ms-listlink, div.ms-vb"))
+            )
+            logger.info("SharePoint page elements detected")
+        except TimeoutException:
+            logger.warning("Timed out waiting for specific elements - continuing with basic detection")
         
         # Try classic SharePoint view selectors first (based on the HTML sample)
         logger.info("Looking for files in classic SharePoint view...")
@@ -39,13 +54,19 @@ def find_all_files(browser):
                         pass
                 logger.info(f"Extracted {len(file_items)} file links from containers")
             else:
-                # Method 3: Try any links with MP4/video extensions
-                logger.info("Trying to find any links with video extensions...")
-                all_links = browser.find_elements(By.TAG_NAME, "a")
-                file_items = [link for link in all_links if 
-                             any(ext in link.get_attribute("href").upper() for ext in [".MP4", ".MOV", ".AVI"]) or
-                             any(ext in (link.get_attribute("aria-label") or "").upper() for ext in ["MP4", "MOV", "AVI"])]
-                logger.info(f"Found {len(file_items)} links that appear to be video files")
+                # Method 3: Try modern SharePoint view selectors
+                logger.info("Trying modern SharePoint view selectors...")
+                file_items = browser.find_elements(By.CSS_SELECTOR, "div.ms-List-cell a[role='link']")
+                
+                if not file_items:
+                    # Method 4: Try any links with video extensions
+                    logger.info("Trying to find any links with video extensions...")
+                    all_links = browser.find_elements(By.TAG_NAME, "a")
+                    file_items = [link for link in all_links if 
+                                 any(ext in (link.get_attribute("href") or "").upper() for ext in VIDEO_EXTENSIONS) or
+                                 any(ext in (link.get_attribute("aria-label") or "").upper() for ext in 
+                                    [ext.strip('.') for ext in VIDEO_EXTENSIONS])]
+                    logger.info(f"Found {len(file_items)} links that appear to be video files")
         
         file_list = []
         
@@ -65,27 +86,24 @@ def find_all_files(browser):
                     # Format typically: "FILENAME, mp4 File"
                     file_name = aria_label.split(",")[0].strip()
                     # Check if we need to add the extension
-                    if not any(file_name.upper().endswith(ext) for ext in [".MP4", ".MOV", ".AVI"]):
+                    if not any(file_name.upper().endswith(ext) for ext in VIDEO_EXTENSIONS):
                         # Try to extract extension from aria-label
-                        if "mp4" in aria_label.lower():
-                            file_name += ".mp4"
-                        elif "mov" in aria_label.lower():
-                            file_name += ".mov"
-                        elif "avi" in aria_label.lower():
-                            file_name += ".avi"
+                        for ext in VIDEO_EXTENSIONS:
+                            ext_name = ext.strip('.').lower()
+                            if ext_name in aria_label.lower():
+                                file_name += ext.lower()
+                                break
                 else:
                     # Fall back to the text content
                     file_name = item.text.strip()
                     
                     # If the text doesn't include extension, try to add it from href
-                    if not any(file_name.upper().endswith(ext) for ext in [".MP4", ".MOV", ".AVI"]):
+                    if not any(file_name.upper().endswith(ext) for ext in VIDEO_EXTENSIONS):
                         # Try to extract from the href
-                        if ".MP4" in href.upper():
-                            file_name += ".mp4"
-                        elif ".MOV" in href.upper():
-                            file_name += ".mov"
-                        elif ".AVI" in href.upper():
-                            file_name += ".avi"
+                        for ext in VIDEO_EXTENSIONS:
+                            if ext in href.upper():
+                                file_name += ext.lower()
+                                break
                 
                 # Last resort: extract filename from the href
                 if not file_name:
@@ -106,9 +124,11 @@ def find_all_files(browser):
                     'name': file_name,
                     'size': "Unknown size",  # Size may not be readily available in classic view
                     'element': item,
-                    'is_video': any(file_name.lower().endswith(ext) for ext in 
-                                   ['.mp4', '.mov', '.avi', '.wmv', '.mkv'])
+                    'is_video': any(file_name.lower().endswith(ext.lower()) for ext in VIDEO_EXTENSIONS)
                 })
+            except StaleElementReferenceException:
+                logger.warning(f"Element {index} is stale, skipping")
+                continue
             except Exception as e:
                 logger.warning(f"Error processing item {index}: {e}")
                 continue
