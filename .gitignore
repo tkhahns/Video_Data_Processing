@@ -3,4 +3,5 @@ __pycache__
 .venv
 data
 models/downloaded/
-**/.DS_Store
+.DS_Store
+output
