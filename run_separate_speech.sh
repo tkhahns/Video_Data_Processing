@@ -28,6 +28,7 @@ if [ "$1" == "--help" ] || [ "$1" == "-h" ]; then
     echo "Options:"
     echo "  --output-dir DIR     Directory to save separated speech files (default: ./output/separated_speech)"
     echo "  --model MODEL        Speech separation model to use (sepformer, conv-tasnet)" 
+    echo "  --file-type TYPE     Output file format: wav (1), mp3 (2), or both (3) (default: mp3)"
     echo "  --recursive          Process video files in subdirectories recursively"
     echo "  --debug              Enable debug logging"
     echo "  --interactive        Force interactive video selection mode"
