@@ -13,7 +13,7 @@ def find_all_files(browser):
     try:
         # Wait for the page to fully load
         logger.info("Waiting for SharePoint page to fully load...")
-        time.sleep(5)  # Give the page some time to initialize
+        time.sleep(3)  # Give the page some time to initialize
         
         # Try classic SharePoint view selectors first (based on the HTML sample)
         logger.info("Looking for files in classic SharePoint view...")
