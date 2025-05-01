@@ -16,7 +16,7 @@ Write-Host "`n[2/2] Activating virtual environment..." -ForegroundColor Green
 
 # Install required packages if needed
 try {
-    python -c "import speechbrain, tqdm" 2>$null
+    python -c "import speechbrain, tqdm, pydub" 2>$null
     $packagesInstalled = $?
 } catch {
     $packagesInstalled = $false
@@ -24,7 +24,7 @@ try {
 
 if (-not $packagesInstalled) {
     Write-Host "`nInstalling required packages..." -ForegroundColor Yellow
-    pip install speechbrain moviepy torchaudio tqdm pydub
+    pip install speechbrain moviepy torchaudio tqdm pydub ffmpeg-python
 }
 
 # Help message if --help flag is provided
@@ -51,10 +51,10 @@ try {
     # If no arguments are provided, use interactive mode
     if ($args.Count -eq 0) {
         Write-Host "Entering interactive mode..." -ForegroundColor Yellow
-        python .\src\separate_speech.py --interactive
+        python -m src.separate_speech --interactive
     } else {
         # Otherwise, pass all arguments to the script
-        python .\src\separate_speech.py $args
+        python -m src.separate_speech $args
     }
     
     if ($LASTEXITCODE -eq 0) {
