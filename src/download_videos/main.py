@@ -36,6 +36,64 @@ logger = logging.getLogger(__name__)
 # Videos directory
 VIDEOS_DIR = Path("./data/videos")
 
+def run_download(url, output_dir=str(VIDEOS_DIR), list_only=False, headless=False, debug=False):
+    """Core download function that can be called from various entry points."""
+    # Set debug logging if requested
+    if debug:
+        logging.getLogger().setLevel(logging.DEBUG)
+        logger.info("Debug mode enabled - detailed logging activated")
+    
+    # Ensure output directory exists
+    ensure_dir_exists(output_dir)
+    
+    # Setup browser with download directory configured
+    browser = setup_browser(headless=headless, output_dir=output_dir)
+    if not browser:
+        logger.error("Failed to set up browser")
+        return 1
+    
+    try:
+        # Authenticate to SharePoint
+        if not authenticate_with_selenium(browser, url):
+            logger.error("Authentication failed")
+            return 1
+        
+        # Find all files
+        all_files = find_all_files(browser)
+        if not all_files:
+            logger.error("No files found")
+            return 1
+        
+        logger.info(f"Found {len(all_files)} files")
+        
+        # Display file list
+        display_file_list(all_files)
+        
+        # If list-only mode, exit here
+        if list_only:
+            logger.info("List-only mode, exiting without downloading")
+            return 0
+        
+        # Prompt for file selection
+        selected_files = prompt_for_file_selection(all_files)
+        
+        if not selected_files:
+            logger.info("No files selected for download")
+            return 0
+            
+        logger.info(f"Selected {len(selected_files)} files for download")
+        
+        # Download selected files
+        successful, failed = download_selected_files(browser, selected_files, output_dir)
+        logger.info(f"Download complete: {successful} files downloaded successfully, {failed} failed")
+        
+        return 0 if failed == 0 else 1
+        
+    finally:
+        # Always close the browser
+        if browser:
+            browser.quit()
+
 def main():
     """Main function to download files from a SharePoint folder using browser authentication."""
     parser = argparse.ArgumentParser(description="Download files from a SharePoint folder using browser authentication")
@@ -66,61 +124,13 @@ def main():
     )
     args = parser.parse_args()
     
-    # Set debug logging if requested
-    if args.debug:
-        logging.getLogger().setLevel(logging.DEBUG)
-        logger.info("Debug mode enabled - detailed logging activated")
-    
-    # Ensure output directory exists
-    ensure_dir_exists(args.output_dir)
-    
-    # Setup browser with download directory configured
-    browser = setup_browser(headless=args.headless, output_dir=args.output_dir)
-    if not browser:
-        logger.error("Failed to set up browser")
-        return 1
-    
-    try:
-        # Authenticate to SharePoint
-        if not authenticate_with_selenium(browser, args.url):
-            logger.error("Authentication failed")
-            return 1
-        
-        # Find all files
-        all_files = find_all_files(browser)
-        if not all_files:
-            logger.error("No files found")
-            return 1
-        
-        logger.info(f"Found {len(all_files)} files")
-        
-        # Display file list
-        display_file_list(all_files)
-        
-        # If list-only mode, exit here
-        if args.list_only:
-            logger.info("List-only mode, exiting without downloading")
-            return 0
-        
-        # Prompt for file selection
-        selected_files = prompt_for_file_selection(all_files)
-        
-        if not selected_files:
-            logger.info("No files selected for download")
-            return 0
-            
-        logger.info(f"Selected {len(selected_files)} files for download")
-        
-        # Download selected files
-        successful, failed = download_selected_files(browser, selected_files, args.output_dir)
-        logger.info(f"Download complete: {successful} files downloaded successfully, {failed} failed")
-        
-        return 0 if failed == 0 else 1
-        
-    finally:
-        # Always close the browser
-        if browser:
-            browser.quit()
+    return run_download(
+        args.url, 
+        args.output_dir, 
+        args.list_only, 
+        args.headless, 
+        args.debug
+    )
 
 if __name__ == "__main__":
     sys.exit(main())
