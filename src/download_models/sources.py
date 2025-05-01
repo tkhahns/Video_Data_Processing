@@ -1,90 +1,20 @@
 """
-Script to download models from Hugging Face for the Video Data Processing project.
+Functions for downloading models from various sources.
 """
 import os
-import csv
-import argparse
-import logging
 import re
+import logging
 import subprocess
 import urllib.request
 import urllib.error
 import shutil
-from pathlib import Path
 from huggingface_hub import hf_hub_download, snapshot_download
-from transformers import AutoModel, AutoProcessor, AutoTokenizer
-import pandas as pd
+from transformers import AutoModel, AutoTokenizer
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+from .utils import ensure_dir_exists
+from .parsers import is_huggingface_model, get_model_id
+
 logger = logging.getLogger(__name__)
-
-# Models directory
-MODELS_DIR = Path("./models/downloaded")
-
-def ensure_dir_exists(directory):
-    """Create directory if it doesn't exist."""
-    if not os.path.exists(directory):
-        os.makedirs(directory)
-        logger.info(f"Created directory: {directory}")
-
-def parse_models_csv(csv_path):
-    """Parse the models reference CSV file."""
-    try:
-        models_df = pd.read_csv(csv_path)
-        logger.info(f"Successfully loaded {len(models_df)} models from CSV")
-        return models_df
-    except Exception as e:
-        logger.error(f"Error loading CSV file: {e}")
-        return None
-
-def is_huggingface_model(website, model_name):
-    """Check if the model is available on Hugging Face."""
-    huggingface_patterns = [
-        "huggingface.co",
-        "hf.co",
-    ]
-    
-    known_hf_models = [
-        "BERT", "ALBERT", "DeBERTa", "ViT", "Whisper", "XLSR", "wav2vec"
-    ]
-    
-    if website:
-        for pattern in huggingface_patterns:
-            if pattern in str(website).lower():
-                return True
-    
-    if model_name:
-        for model in known_hf_models:
-            if model.lower() in str(model_name).lower():
-                return True
-    
-    return False
-
-def get_model_id(model_name, model_type):
-    """Map model names to Hugging Face model IDs."""
-    model_mappings = {
-        "ALBERT": "albert-base-v2",
-        "DeBERTa": "microsoft/deberta-base",
-        "XLSR": "facebook/wav2vec2-large-xlsr-53",
-        "Sentence-BERT": "sentence-transformers/all-MiniLM-L6-v2",
-        "WhisperX": "openai/whisper-small",
-        "SimCSE": "princeton-nlp/sup-simcse-bert-base-uncased",
-    }
-    
-    if model_name in model_mappings:
-        return model_mappings[model_name]
-    
-    if "bert" in model_name.lower() and "text" in model_type.lower():
-        return "bert-base-uncased"
-    elif "whisper" in model_name.lower():
-        return "openai/whisper-base"
-    
-    logger.warning(f"No direct Hugging Face mapping for {model_name}, using generic ID")
-    return None
 
 def download_model(model_id, model_name, output_dir):
     """Download a model from Hugging Face."""
@@ -234,87 +164,3 @@ def download_from_website(website, model_name, model_type, output_dir):
     else:
         logger.warning(f"Website format not recognized for {model_name}: {website}")
         return False
-
-def main():
-    """Main function to download models."""
-    parser = argparse.ArgumentParser(description="Download models from their source websites or Hugging Face")
-    parser.add_argument(
-        "--csv-path", 
-        default="./models/reference_list_pre_trained_model.csv",
-        help="Path to the CSV file containing model references"
-    )
-    parser.add_argument(
-        "--output-dir", 
-        default=str(MODELS_DIR),
-        help="Directory to save the downloaded models"
-    )
-    parser.add_argument(
-        "--model-types", 
-        nargs="+", 
-        default=["all"],
-        help="Types of models to download (audio, video, image, etc.)"
-    )
-    parser.add_argument(
-        "--force",
-        action="store_true",
-        help="Force re-download even if model directory exists"
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Show what would be downloaded without actually downloading"
-    )
-    args = parser.parse_args()
-    
-    ensure_dir_exists(args.output_dir)
-    
-    models_df = parse_models_csv(args.csv_path)
-    if models_df is None:
-        return
-    
-    if "all" not in args.model_types:
-        models_df = models_df[models_df["Type"].str.lower().isin([t.lower() for t in args.model_types])]
-        logger.info(f"Filtered to {len(models_df)} models of types: {', '.join(args.model_types)}")
-    
-    successful_downloads = 0
-    failed_downloads = 0
-    skipped_downloads = 0
-    
-    for _, row in models_df.iterrows():
-        model_name = row.get("Name of the Model", "")
-        model_type = row.get("Type", "")
-        website = row.get("Website", "")
-        
-        if not model_name or model_name == "-":
-            logger.info(f"Skipping row with no model name")
-            continue
-            
-        model_dir = os.path.join(args.output_dir, model_name.replace(" ", "_").lower())
-        if os.path.exists(model_dir) and not args.force:
-            logger.info(f"Skipping {model_name} - directory already exists (use --force to override)")
-            skipped_downloads += 1
-            continue
-            
-        if args.dry_run:
-            logger.info(f"[DRY RUN] Would download {model_name} from {website}")
-            continue
-        
-        if download_from_website(website, model_name, model_type, args.output_dir):
-            successful_downloads += 1
-        elif is_huggingface_model(website, model_name):
-            model_id = get_model_id(model_name, model_type)
-            if download_model(model_id, model_name, args.output_dir):
-                successful_downloads += 1
-            else:
-                failed_downloads += 1
-        else:
-            logger.warning(f"Unable to download {model_name} - no valid source identified")
-            failed_downloads += 1
-    
-    if args.dry_run:
-        logger.info(f"[DRY RUN] Would download {len(models_df)} models")
-    else:
-        logger.info(f"Download summary: {successful_downloads} successful, {failed_downloads} failed, {skipped_downloads} skipped")
-
-if __name__ == "__main__":
-    main()
