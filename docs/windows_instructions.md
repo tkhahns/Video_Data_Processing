@@ -270,3 +270,61 @@ The tool will:
 3. Save the isolated speech as audio files (WAV and/or MP3)
 
 **Note:** The first run will download the speech separation model (approximately 1GB), which may take some time depending on your internet connection.
+
+---
+
+## Transcribe Speech to Text
+
+You can transcribe speech audio files to text using the provided speech-to-text transcription tool:
+
+### Option 1: Using the convenience script (recommended)
+
+```bash
+# Run the script with no arguments (interactive mode)
+.\run_speech_to_text.ps1
+
+# Or process specific audio files
+.\run_speech_to_text.ps1 path\to\audio.wav
+
+# Additional options:
+.\run_speech_to_text.ps1 --output-dir "./my-transcripts" path\to\audio.mp3
+.\run_speech_to_text.ps1 --language fr  # Specify language (default: en)
+.\run_speech_to_text.ps1 --model whisperx  # Choose model (whisperx, xlsr)
+```
+
+This script automatically:
+- Activates the virtual environment
+- Installs required dependencies
+- Processes audio files through the speech-to-text model
+
+### Option 2: Running as a module
+
+```bash
+# Using Python module syntax (interactive mode)
+python -m src.speech_to_text --interactive
+
+# Process specific audio files
+python -m src.speech_to_text path\to\audio.mp3
+
+# Additional options
+python -m src.speech_to_text path\to\audio.wav --output-dir "./my-transcripts"
+python -m src.speech_to_text path\to\audio.mp3 --language es
+```
+
+### Option 3: Running the Python script directly
+
+```bash
+# Basic usage
+python src/speech_to_text/__main__.py path\to\audio.mp3
+
+# Advanced options
+python src/speech_to_text/__main__.py --output-dir "./my-transcripts" --language fr path\to\audio.mp3
+python src/speech_to_text/__main__.py --model xlsr --recursive path\to\audio\folder
+```
+
+The tool will:
+1. Process the audio files through the selected speech recognition model
+2. Create timestamped transcriptions of the spoken content
+3. Save the results as both plain text (.txt) and subtitle (.srt) files
+
+**Note:** The first run will download the speech recognition model, which may take some time depending on your internet connection.
