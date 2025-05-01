@@ -124,7 +124,22 @@ This script automatically:
 - Prompts for SharePoint URL if not provided
 - Handles errors gracefully
 
-### Option 2: Running the Python script directly
+### Option 2: Running as a module
+
+```bash
+# Using Python module syntax
+python -m src.download_videos --url "https://your-sharepoint-site.com/folder-with-videos"
+
+# Shorthand version
+python src/download_videos --url "https://your-sharepoint-site.com/folder-with-videos"
+
+# Additional options
+python src/download_videos --url "https://your-sharepoint-site.com/folder-with-videos" --output-dir "./my-videos"
+python src/download_videos --list-only --url "https://your-sharepoint-site.com/folder-with-videos"
+python src/download_videos --debug --url "https://your-sharepoint-site.com/folder-with-videos"
+```
+
+### Option 3: Running the Python script directly
 
 ```bash
 # Basic usage
