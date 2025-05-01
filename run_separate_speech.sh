@@ -16,9 +16,9 @@ echo -e "\n[2/2] Activating virtual environment..."
 source .venv/bin/activate
 
 # Install required packages if needed
-if ! python -c "import speechbrain tqdm" &> /dev/null; then
+if ! python -c "import speechbrain tqdm pydub" &> /dev/null; then
     echo -e "\nInstalling required packages..."
-    pip install speechbrain moviepy torchaudio tqdm pydub
+    pip install speechbrain moviepy torchaudio tqdm pydub ffmpeg-python
 fi
 
 # Help message if --help flag is provided
@@ -44,10 +44,10 @@ echo -e "\nRunning speech separation..."
 # If no arguments are provided, use interactive mode
 if [ $# -eq 0 ]; then
     echo "Entering interactive mode..."
-    python ./src/separate_speech.py --interactive
+    python -m src.separate_speech --interactive
 else
     # Otherwise, pass all arguments to the script
-    python ./src/separate_speech.py "$@"
+    python -m src.separate_speech "$@"
 fi
 
 if [ $? -eq 0 ]; then
