@@ -196,3 +196,24 @@ This will:
 4. Download your selected files
 
 **Note:** The tool requires authentication to SharePoint. You'll need to sign in through the browser window that opens.
+
+---
+
+## Install ffmpeg
+
+ffmpeg is required for audio processing and conversion:
+
+```bash
+# Install ffmpeg using Homebrew
+brew install ffmpeg
+```
+
+You can also install the Python wrapper for ffmpeg:
+
+```bash
+pip install ffmpeg-python pydub
+```
+
+This will:
+1. Install the ffmpeg command-line tools
+2. Install Python wrappers for easier integration
