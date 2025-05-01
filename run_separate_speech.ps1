@@ -15,9 +15,16 @@ Write-Host "`n[2/2] Activating virtual environment..." -ForegroundColor Green
 .\.venv\Scripts\Activate.ps1
 
 # Install required packages if needed
-if (-not (python -c "import speechbrain" 2>$null)) {
+try {
+    python -c "import speechbrain, tqdm" 2>$null
+    $packagesInstalled = $?
+} catch {
+    $packagesInstalled = $false
+}
+
+if (-not $packagesInstalled) {
     Write-Host "`nInstalling required packages..." -ForegroundColor Yellow
-    pip install speechbrain moviepy torchaudio
+    pip install speechbrain moviepy torchaudio tqdm pydub
 }
 
 # Help message if --help flag is provided
@@ -25,7 +32,7 @@ if ($args.Count -gt 0 -and ($args[0] -eq "--help" -or $args[0] -eq "-h")) {
     Write-Host "`nUsage: .\run_separate_speech.ps1 [options] <video_file(s)>" -ForegroundColor Yellow
     Write-Host ""
     Write-Host "Options:" -ForegroundColor Yellow
-    Write-Host "  --output-dir DIR     Directory to save separated speech files"
+    Write-Host "  --output-dir DIR     Directory to save separated speech files (default: ./output/separated_speech)"
     Write-Host "  --model MODEL        Speech separation model to use (sepformer, conv-tasnet)"
     Write-Host "  --recursive          Process video files in subdirectories recursively"
     Write-Host "  --debug              Enable debug logging"
