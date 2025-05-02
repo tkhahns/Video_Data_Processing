@@ -17,18 +17,41 @@ if __name__ == "__main__":
     from src.speech_to_text import transcription, utils
     from src.speech_to_text import DEFAULT_MODELS_DIR, DEFAULT_OUTPUT_DIR, DEFAULT_AUDIO_DIR
     from src.speech_to_text import DEFAULT_MODEL, DEFAULT_LANGUAGE, DEFAULT_SEGMENT_SIZE, SUPPORTED_MODELS
+    from src.utils.colored_logging import setup_colored_logging
 else:
     # Use relative imports when imported as a module
     from . import transcription, utils
     from . import DEFAULT_MODELS_DIR, DEFAULT_OUTPUT_DIR, DEFAULT_AUDIO_DIR
     from . import DEFAULT_MODEL, DEFAULT_LANGUAGE, DEFAULT_SEGMENT_SIZE, SUPPORTED_MODELS
+    from ..utils.colored_logging import setup_colored_logging
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+# Configure colored logging
 logger = logging.getLogger(__name__)
+setup_colored_logging(logger)
+
+def select_output_format():
+    """
+    Prompt the user to select the output format for transcriptions.
+    
+    Returns:
+        Selected output format: "srt", "txt", or "both"
+    """
+    while True:
+        print("\nWhich audio format do you want to output?")
+        print("1. SRT subtitle format (.srt)")
+        print("2. Text format with timestamps (.txt)")
+        print("3. Both formats")
+        
+        choice = input("\nYour choice (1-3): ").strip()
+        
+        if choice == '1':
+            return "srt"
+        elif choice == '2':
+            return "txt"
+        elif choice == '3':
+            return "both"
+        else:
+            print("Invalid choice. Please enter 1, 2, or 3.")
 
 def select_files(directory: Path, file_type: str = "audio"):
     """
@@ -39,7 +62,7 @@ def select_files(directory: Path, file_type: str = "audio"):
         file_type: Type of files to look for ("audio")
         
     Returns:
-        List of selected file paths
+        Tuple of (selected file paths, output format)
     """
     from src.speech_to_text import SUPPORTED_AUDIO_FORMATS
     
@@ -60,7 +83,7 @@ def select_files(directory: Path, file_type: str = "audio"):
     
     if not all_files:
         print(f"\nNo {file_type} files found in {directory}")
-        return []
+        return [], None
     
     # Sort files alphabetically
     all_files = sorted(all_files)
@@ -77,19 +100,20 @@ def select_files(directory: Path, file_type: str = "audio"):
     # Prompt for selection
     while True:
         print("\nOptions:")
-        print("- Enter numbers (e.g., '1,3,5') to select specific videos")
-        print("- Enter 'all' to process all videos")
+        print("- Enter numbers (e.g., '1,3,5') to select specific files")
+        print("- Enter 'all' to process all files")
         print("- Enter 'q' to quit")
         
         choice = input("\nYour selection: ").strip()
         
         if choice.lower() == 'q':
             print("Quitting...")
-            return []
+            return [], None
         
         if choice.lower() == 'all':
             print(f"Selected all {len(all_files)} files")
-            return all_files
+            selected_files = all_files
+            break
         
         try:
             # Parse the selection
@@ -117,12 +141,89 @@ def select_files(directory: Path, file_type: str = "audio"):
                 source_indicator = " (separated speech)" if is_separated else ""
                 print(f"{i}. {file_path}{source_indicator}")
             
-            confirmation = input("\nConfirm selection? (y/n): ").strip().lower()
-            if confirmation == 'y':
-                return selected_files
+            # Proceeding without confirmation
+            break
             
         except ValueError:
             print("Invalid input. Please enter numbers separated by commas.")
+    
+    # Now prompt for output format
+    output_format = select_output_format()
+    
+    return selected_files, output_format
+
+def select_files_from_list(file_list):
+    """
+    Allow user to select files from a provided list.
+    
+    Args:
+        file_list: List of file paths to select from
+        
+    Returns:
+        Tuple of (selected file paths, output format)
+    """
+    # Sort files alphabetically
+    all_files = sorted(file_list)
+    
+    # Print the list of available files
+    print(f"\nAvailable audio files:")
+    for i, file_path in enumerate(all_files, 1):
+        print(f"{i}. {file_path}")
+    
+    selected_files = []
+    
+    # Prompt for selection
+    while True:
+        print("\nOptions:")
+        print("- Enter numbers (e.g., '1,3,5') to select specific files")
+        print("- Enter 'all' to process all files")
+        print("- Enter 'q' to quit")
+        
+        choice = input("\nYour selection: ").strip()
+        
+        if choice.lower() == 'q':
+            print("Quitting...")
+            return [], None
+        
+        if choice.lower() == 'all':
+            print(f"Selected all {len(all_files)} files")
+            selected_files = all_files
+            break
+        
+        try:
+            # Parse the selection
+            indices = [int(idx.strip()) for idx in choice.split(',') if idx.strip()]
+            
+            # Validate indices
+            valid_indices = []
+            for idx in indices:
+                if 1 <= idx <= len(all_files):
+                    valid_indices.append(idx - 1)  # Convert to 0-based index
+                else:
+                    print(f"Warning: {idx} is not a valid file number")
+            
+            if not valid_indices:
+                print("No valid files selected, please try again")
+                continue
+            
+            # Get the selected files
+            selected_files = [all_files[idx] for idx in valid_indices]
+            
+            # Print the selected files
+            print(f"\nSelected {len(selected_files)} files:")
+            for i, file_path in enumerate(selected_files, 1):
+                print(f"{i}. {file_path}")
+            
+            # Proceeding without confirmation
+            break
+            
+        except ValueError:
+            print("Invalid input. Please enter numbers separated by commas.")
+    
+    # Now prompt for output format
+    output_format = select_output_format()
+    
+    return selected_files, output_format
 
 def main():
     """Main function."""
@@ -174,6 +275,18 @@ def main():
         action="store_true", 
         help="Use output from speech separation module as input"
     )
+    parser.add_argument(
+        "--output-format",
+        type=str,
+        choices=["srt", "txt", "both"],
+        default="srt",
+        help="Output format for transcriptions: srt, txt, or both (default: srt)"
+    )
+    parser.add_argument(
+        "--select",
+        action="store_true",
+        help="Force file selection prompt even when files are specified in command line"
+    )
     
     args = parser.parse_args()
     
@@ -205,18 +318,28 @@ def main():
         DEFAULT_AUDIO_DIR
     )
     
-    # If no audio files found or interactive mode requested, prompt user to select
-    if not all_audio_files or args.interactive:
-        logger.info("No audio files found or interactive mode requested.")
-        
-        # Use our own file selection interface
-        all_audio_files = select_files(DEFAULT_AUDIO_DIR, "audio")
-        
+    # Default output format from command line
+    output_format = args.output_format
+    
+    # If no audio files found, interactive mode requested, or select flag is set
+    if not all_audio_files or args.interactive or args.select:
+        if args.select and all_audio_files:
+            logger.info(f"Found {len(all_audio_files)} audio file(s). Select which ones to process:")
+            all_audio_files, interactive_format = select_files_from_list(all_audio_files)
+            if interactive_format:
+                output_format = interactive_format
+        else:
+            logger.info("No audio files found or interactive mode requested.")
+            all_audio_files, interactive_format = select_files(DEFAULT_AUDIO_DIR, "audio")
+            if interactive_format:
+                output_format = interactive_format
+            
         if not all_audio_files:
-            logger.info("Please provide audio file(s) as arguments or use --recursive to search for files.")
+            logger.info("No files selected. Please provide audio file(s) as arguments or use --recursive to search for files.")
             return 0
     
     logger.info(f"Found {len(all_audio_files)} audio file(s) to process")
+    logger.info(f"Using output format: {output_format}")
     
     # Create output directory
     output_dir = Path(args.output_dir)
@@ -236,7 +359,8 @@ def main():
                 output_path,
                 args.model,
                 Path(args.models_dir),
-                args.language
+                args.language,
+                output_format=output_format
             )
             
             if "error" in result:
