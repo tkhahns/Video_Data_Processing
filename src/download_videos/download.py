@@ -5,9 +5,26 @@ import os
 import logging
 import time
 import requests
+import sys
 from selenium import webdriver
 
-logger = logging.getLogger(__name__)
+# Try multiple approaches for importing the logging modules
+try:
+    # First try absolute imports
+    import init_logging
+except ImportError:
+    # Fall back to relative imports if the module structure permits it
+    try:
+        from .. import init_logging
+    except ImportError:
+        # Last resort: add parent directory to path
+        import sys
+        import os
+        sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+        import init_logging
+
+# Get logger with colored output
+logger = init_logging.get_logger(__name__)
 
 def download_selected_files(browser, selected_files, output_dir):
     """Download files directly to the machine."""

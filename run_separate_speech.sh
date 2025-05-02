@@ -16,9 +16,9 @@ echo -e "\n[2/2] Activating virtual environment..."
 source .venv/bin/activate
 
 # Install required packages if needed
-if ! python -c "import speechbrain tqdm pydub" &> /dev/null; then
+if ! python -c "import speechbrain tqdm pydub colorama" &> /dev/null; then
     echo -e "\nInstalling required packages..."
-    pip install speechbrain moviepy torchaudio tqdm pydub ffmpeg-python
+    pip install speechbrain moviepy torchaudio tqdm pydub ffmpeg-python colorama
 fi
 
 # Help message if --help flag is provided

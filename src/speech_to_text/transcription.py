@@ -7,11 +7,36 @@ import logging
 import torch
 import tempfile
 import tqdm
+import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
-# Configure logging
-logger = logging.getLogger(__name__)
+# Handle imports differently when run as script vs. as module
+if __name__ == "__main__" or os.path.basename(sys.argv[0]) == "__main__.py":
+    # Add the parent directory to sys.path for direct script execution
+    parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+    sys.path.insert(0, parent_dir)
+    
+    # Import from utils package
+    from utils import colored_logging, init_logging
+else:
+    # Try using both approaches for importing the logging modules
+    try:
+        # First try absolute imports
+        from utils import colored_logging, init_logging
+    except ImportError:
+        # Fall back to relative imports if the module structure permits it
+        try:
+            from ...utils import colored_logging, init_logging
+        except ImportError:
+            # Last resort: try absolute imports with sys.path manipulation
+            import sys
+            import os
+            sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+            from utils import colored_logging, init_logging
+
+# Get logger for this module
+logger = init_logging.get_logger(__name__)
 
 class TranscriptionModel:
     """Base class for transcription models."""

@@ -18,6 +18,9 @@ if __name__ == "__main__":
     from src.download_videos.interface import display_file_list, prompt_for_file_selection
     from src.download_videos.download import download_selected_files
     from src.download_videos.utils import ensure_dir_exists
+    
+    # Import from utils package
+    from utils import colored_logging, init_logging
 else:
     # Use relative imports when imported as a module
     from .browser import setup_browser, authenticate_with_selenium
@@ -25,13 +28,22 @@ else:
     from .interface import display_file_list, prompt_for_file_selection
     from .download import download_selected_files
     from .utils import ensure_dir_exists
+    
+    # Try using different approaches for importing the logging modules
+    try:
+        # First try absolute imports
+        from utils import colored_logging, init_logging
+    except ImportError:
+        # Fall back to relative imports
+        try:
+            from ...utils import colored_logging, init_logging
+        except ImportError:
+            # Last resort: add parent directory to sys.path
+            sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+            from utils import colored_logging, init_logging
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+# Get logger with colored output
+logger = init_logging.get_logger(__name__)
 
 # Videos directory
 VIDEOS_DIR = Path("./data/videos")

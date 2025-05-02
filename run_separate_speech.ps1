@@ -16,7 +16,7 @@ Write-Host "`n[2/2] Activating virtual environment..." -ForegroundColor Green
 
 # Install required packages if needed
 try {
-    python -c "import speechbrain, tqdm, pydub" 2>$null
+    python -c "import speechbrain, tqdm, pydub, colorama" 2>$null
     $packagesInstalled = $?
 } catch {
     $packagesInstalled = $false
@@ -24,7 +24,7 @@ try {
 
 if (-not $packagesInstalled) {
     Write-Host "`nInstalling required packages..." -ForegroundColor Yellow
-    pip install speechbrain moviepy torchaudio tqdm pydub ffmpeg-python
+    pip install speechbrain moviepy torchaudio tqdm pydub ffmpeg-python colorama
 }
 
 # Help message if --help flag is provided

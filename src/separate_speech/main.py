@@ -9,24 +9,36 @@ from pathlib import Path
 import tqdm
 
 # Handle imports differently when run as script vs. as module
-if __name__ == "__main__":
+if __name__ == "__main__" or os.path.basename(sys.argv[0]) == "__main__.py":
     # Add the parent directory to sys.path for direct script execution
     parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
     sys.path.insert(0, parent_dir)
     
     from src.separate_speech import extraction, interface, processor, utils
     from src.separate_speech import DEFAULT_MODELS_DIR, DEFAULT_OUTPUT_DIR, DEFAULT_VIDEOS_DIR, DEFAULT_MODEL, DEFAULT_CHUNK_SIZE
+    
+    # Import from utils package
+    from utils import colored_logging, init_logging
 else:
     # Use relative imports when imported as a module
     from . import extraction, interface, processor, utils
     from . import DEFAULT_MODELS_DIR, DEFAULT_OUTPUT_DIR, DEFAULT_VIDEOS_DIR, DEFAULT_MODEL, DEFAULT_CHUNK_SIZE
+    
+    # Try using different approaches for importing the logging modules
+    try:
+        # First try absolute imports
+        from utils import colored_logging, init_logging
+    except ImportError:
+        # Fall back to relative imports
+        try:
+            from ...utils import colored_logging, init_logging
+        except ImportError:
+            # Last resort: add parent directory to sys.path
+            sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+            from utils import colored_logging, init_logging
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+# Get logger for this module
+logger = init_logging.get_logger(__name__)
 
 def main():
     """Main function."""

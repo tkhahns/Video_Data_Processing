@@ -2,8 +2,21 @@
 User interface components for file selection and display.
 """
 import logging
+import sys
+import os
 
-logger = logging.getLogger(__name__)
+# Try importing from utils package
+try:
+    from utils import colored_logging, init_logging
+except ImportError:
+    # Fall back to adding the parent directory to sys.path
+    import sys
+    import os
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+    from utils import colored_logging, init_logging
+
+# Get logger with colored output
+logger = init_logging.get_logger(__name__)
 
 def display_file_list(file_list):
     """Display the list of files with indices for selection."""

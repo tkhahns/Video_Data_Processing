@@ -10,6 +10,14 @@ from pathlib import Path
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 sys.path.insert(0, parent_dir)
 
+# Import the colored logging system
+import colored_logging
+import init_logging
+
+# Initialize colored logging
+logger = init_logging.get_logger(__name__)
+logger.info("Starting video downloader...")
+
 # Import the main function
 from src.download_videos.main import main
 

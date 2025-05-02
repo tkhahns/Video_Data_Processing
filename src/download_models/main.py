@@ -1,5 +1,5 @@
 """
-Main module for downloading models from various sources.
+Main module for downloading pre-trained models.
 """
 import os
 import sys
@@ -7,27 +7,36 @@ import argparse
 import logging
 from pathlib import Path
 
-# Handle imports differently when run as script vs. as module
-if __name__ == "__main__":
-    # Add the parent directory to sys.path for direct script execution
-    parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-    sys.path.insert(0, parent_dir)
-    
+# Fix the import handling to be more robust
+# Add project root to path
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+sys.path.insert(0, project_root)
+
+# Determine if running as script or imported
+is_main = __name__ == "__main__" or os.path.basename(sys.argv[0]) == "__main__.py"
+
+try:
+    # Try absolute import from project root
+    from utils import init_logging
+    logger = init_logging.get_logger(__name__)
+except ImportError:
+    # Fall back to standard logging if utils module not found
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    logger = logging.getLogger(__name__)
+    logger.warning("Could not import colored logging, using default logging instead")
+
+# Use appropriate import style based on execution context
+if is_main:
     from src.download_models.utils import ensure_dir_exists, MODELS_DIR
     from src.download_models.parsers import parse_models_csv, is_huggingface_model, get_model_id
     from src.download_models.sources import download_from_website, download_model
 else:
-    # Use relative imports when imported as a module
     from .utils import ensure_dir_exists, MODELS_DIR
     from .parsers import parse_models_csv, is_huggingface_model, get_model_id
     from .sources import download_from_website, download_model
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 def run_download(csv_path, output_dir=str(MODELS_DIR), model_types=None, force=False, dry_run=False):
     """Core download function that can be called from various entry points."""

@@ -4,12 +4,25 @@ SharePoint file discovery functionality.
 import logging
 import time
 import urllib.parse
+import sys
+import os
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, StaleElementReferenceException
 
-logger = logging.getLogger(__name__)
+# Try importing from utils package
+try:
+    from utils import colored_logging, init_logging
+except ImportError:
+    # Fall back to adding the parent directory to sys.path
+    import sys
+    import os
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+    from utils import colored_logging, init_logging
+
+# Get logger with colored output
+logger = init_logging.get_logger(__name__)
 
 # Define common video file extensions
 VIDEO_EXTENSIONS = ['.MP4', '.MOV', '.AVI', '.WMV', '.MKV', '.M4V', '.WEBM', '.FLV', '.3GP']
