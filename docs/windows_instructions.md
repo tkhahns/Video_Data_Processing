@@ -290,12 +290,19 @@ You can transcribe speech audio files to text using the provided speech-to-text 
 .\run_speech_to_text.ps1 --output-dir "./my-transcripts" path\to\audio.mp3
 .\run_speech_to_text.ps1 --language fr  # Specify language (default: en)
 .\run_speech_to_text.ps1 --model whisperx  # Choose model (whisperx, xlsr)
+.\run_speech_to_text.ps1 --select  # Force file selection even with files specified
 ```
 
 This script automatically:
 - Activates the virtual environment
 - Installs required dependencies
 - Processes audio files through the speech-to-text model
+
+When run in interactive mode, the tool will:
+1. Display a list of available audio files
+2. Allow you to select specific files by number (e.g., "1,3,5") or choose "all"
+3. Prompt you to choose an output format (SRT subtitles, TXT with timestamps, or both)
+4. Process the selected files with the chosen settings
 
 ### Option 2: Running as a module
 
@@ -309,6 +316,7 @@ python -m src.speech_to_text path\to\audio.mp3
 # Additional options
 python -m src.speech_to_text path\to\audio.wav --output-dir "./my-transcripts"
 python -m src.speech_to_text path\to\audio.mp3 --language es
+python -m src.speech_to_text --output-format txt  # Options: srt, txt, both
 ```
 
 ### Option 3: Running the Python script directly
@@ -320,11 +328,12 @@ python src/speech_to_text/__main__.py path\to\audio.mp3
 # Advanced options
 python src/speech_to_text/__main__.py --output-dir "./my-transcripts" --language fr path\to\audio.mp3
 python src/speech_to_text/__main__.py --model xlsr --recursive path\to\audio\folder
+python src/speech_to_text/__main__.py --output-format both  # Save as both SRT and TXT
 ```
 
 The tool will:
 1. Process the audio files through the selected speech recognition model
 2. Create timestamped transcriptions of the spoken content
-3. Save the results as both plain text (.txt) and subtitle (.srt) files
+3. Save the results as SRT subtitles (.srt), plain text with timestamps (.txt), or both formats
 
-**Note:** The first run will download the speech recognition model, which may take some time depending on your internet connection.
+**Note:** The first run will download the speech recognition model, which may take some time depending on your internet connection. If using a CPU-only system, the tool will automatically fall back to float32 precision for better compatibility.
