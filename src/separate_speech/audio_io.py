@@ -1,14 +1,36 @@
 """
-Audio input/output functionality.
+Audio I/O operations for speech separation.
 """
 import os
 import logging
 import subprocess
 import torch
 import torchaudio
+import tempfile
+import numpy as np
+from pathlib import Path
+import tqdm
 from .utils import check_ffmpeg_dependencies
 
-logger = logging.getLogger(__name__)
+# Try importing from utils package
+try:
+    from utils import init_logging
+    logger = init_logging.get_logger(__name__)
+except ImportError:
+    # Fall back to standard logging
+    logger = logging.getLogger(__name__)
+
+def ensure_directory_exists(filepath):
+    """
+    Create directory for the given filepath if it doesn't exist.
+    
+    Args:
+        filepath: Path to the file (including filename)
+    """
+    directory = os.path.dirname(filepath)
+    if directory and not os.path.exists(directory):
+        os.makedirs(directory)
+        logger.info(f"Created directory: {directory}")
 
 def convert_wav_to_mp3(wav_path, mp3_path):
     """Convert WAV file to MP3 format using pydub or ffmpeg."""
@@ -33,59 +55,101 @@ def convert_wav_to_mp3(wav_path, mp3_path):
             return False
 
 def save_audio(waveform, sample_rate, output_path, file_type="mp3"):
-    """Save audio waveform to file.
+    """
+    Save audio waveform to file.
     
     Args:
-        waveform: The audio data to save
+        waveform: Audio waveform tensor [channels, samples]
         sample_rate: Sample rate of the audio
-        output_path: Path to save the audio without extension
-        file_type: Type of file to save - "wav", "mp3", or both ("both")
+        output_path: Path to save the audio (without extension)
+        file_type: Output format ("wav", "mp3", or "both")
+        
+    Returns:
+        True if successful, False otherwise
     """
     try:
-        # Ensure output path has no extension
-        if output_path.lower().endswith('.wav') or output_path.lower().endswith('.mp3'):
-            output_path = os.path.splitext(output_path)[0]
-        
-        # Define paths
-        wav_path = output_path + '.wav'
-        mp3_path = output_path + '.mp3'
-        
-        # Ensure waveform has the right shape
+        # Ensure correct shape for torchaudio
         if waveform.dim() == 1:
-            waveform = waveform.unsqueeze(0)
-        
-        # Check audio statistics before saving
-        audio_max = waveform.abs().max().item()
-        audio_mean = waveform.abs().mean().item()
-        logger.info(f"Audio statistics: max_amplitude={audio_max:.6f}, mean_amplitude={audio_mean:.6f}")
-        
-        if audio_max < 0.01:
-            logger.warning("WARNING: Audio amplitude is very low, output may be inaudible!")
-        
-        # Always save as WAV (it's needed for MP3 conversion anyway)
-        logger.info(f"Saving WAV file: {wav_path}")
-        torchaudio.save(wav_path, waveform, sample_rate)
-        
-        # Convert to MP3 if requested
-        if file_type.lower() in ["mp3", "both"]:
-            logger.info(f"Converting to MP3: {mp3_path}")
-            success = convert_wav_to_mp3(wav_path, mp3_path)
+            waveform = waveform.unsqueeze(0)  # Add channel dimension
             
-            if success:
-                logger.info(f"Successfully saved MP3: {mp3_path}")
-                # Remove WAV file if not keeping both
-                if file_type.lower() != "both" and file_type.lower() != "wav":
-                    os.remove(wav_path)
-                    logger.info("Removed temporary WAV file")
-            else:
-                logger.warning(f"MP3 conversion failed, keeping WAV file: {wav_path}")
-        
-        # Log which files were kept
-        if file_type.lower() == "wav" or file_type.lower() == "both" or (file_type.lower() == "mp3" and not success):
-            logger.info(f"Saved WAV file: {wav_path}")
+        if file_type in ["wav", "both"]:
+            # Ensure directory exists
+            wav_path = str(output_path) + ".wav"
+            ensure_directory_exists(wav_path)
+            
+            # Save as WAV using torchaudio
+            torchaudio.save(wav_path, waveform.cpu(), sample_rate)
+            logger.info(f"Saved WAV audio to {wav_path}")
+            
+        if file_type in ["mp3", "both"]:
+            # Ensure directory exists for mp3 file
+            mp3_path = str(output_path) + ".mp3"
+            ensure_directory_exists(mp3_path)
+            
+            # Try to save as MP3 using various methods
+            try:
+                # Method 1: Try using pydub
+                # Save temporary WAV file first
+                temp_wav = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+                temp_wav.close()
+                torchaudio.save(temp_wav.name, waveform.cpu(), sample_rate)
+                
+                # Convert to MP3
+                from pydub import AudioSegment
+                audio_segment = AudioSegment.from_wav(temp_wav.name)
+                audio_segment.export(mp3_path, format="mp3", bitrate="192k")
+                
+                # Clean up temp file
+                os.unlink(temp_wav.name)
+                logger.info(f"Saved MP3 audio to {mp3_path}")
+                
+            except ImportError:
+                # Method 2: Try direct ffmpeg conversion
+                try:
+                    # Save temporary WAV file first
+                    temp_wav = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+                    temp_wav.close()
+                    torchaudio.save(temp_wav.name, waveform.cpu(), sample_rate)
+                    
+                    # Convert to MP3 using ffmpeg
+                    subprocess.run([
+                        "ffmpeg", "-y", "-i", temp_wav.name, 
+                        "-codec:a", "libmp3lame", "-qscale:a", "2",
+                        mp3_path
+                    ], check=True, capture_output=True)
+                    
+                    # Clean up temp file
+                    os.unlink(temp_wav.name)
+                    logger.info(f"Saved MP3 audio to {mp3_path} using ffmpeg")
+                    
+                except Exception as e:
+                    logger.error(f"Failed to convert to MP3: {e}")
+                    return False
             
         return True
-            
+        
     except Exception as e:
         logger.error(f"Error saving audio: {e}")
         return False
+
+def save_audio_segment(waveform, sample_rate, output_path, file_type="mp3"):
+    """
+    Save audio segment to file.
+    
+    Args:
+        waveform: Audio waveform tensor [channels, samples]
+        sample_rate: Sample rate of the audio
+        output_path: Path to save the audio (without extension)
+        file_type: Output format ("wav", "mp3", or "both")
+        
+    Returns:
+        Path to the saved file, or None if saving failed
+    """
+    if save_audio(waveform, sample_rate, output_path, file_type):
+        if file_type == "wav":
+            return str(output_path) + ".wav"
+        elif file_type == "mp3":
+            return str(output_path) + ".mp3"
+        elif file_type == "both":
+            return str(output_path) + ".mp3"  # Return MP3 by default for "both"
+    return None
