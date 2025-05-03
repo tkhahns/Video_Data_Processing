@@ -232,6 +232,7 @@ You can extract and separate speech from video files using the provided speech s
 .\run_separate_speech.ps1 --output-dir "./my-speech-output" path\to\video.mp4
 .\run_separate_speech.ps1 --file-type wav  # Choose output format: wav, mp3, or both
 .\run_separate_speech.ps1 --model sepformer
+.\run_separate_speech.ps1 --detect-dialogues  # Enable dialogue detection
 ```
 
 This script automatically:
@@ -251,6 +252,8 @@ python -m src.separate_speech path\to\video.mp4
 # Additional options
 python -m src.separate_speech path\to\video.mp4 --output-dir "./my-speech-output"
 python -m src.separate_speech path\to\video.mp4 --file-type wav
+python -m src.separate_speech path\to\video.mp4 --detect-dialogues  # Enable dialogue detection
+python -m src.separate_speech path\to\video.mp4 --skip-no-speech  # Skip files without speech
 ```
 
 ### Option 3: Running the Python script directly
@@ -262,14 +265,31 @@ python src/separate_speech/__main__.py path\to\video.mp4
 # Advanced options
 python src/separate_speech/__main__.py --output-dir "./my-speech-output" --file-type both path\to\video.mp4
 python src/separate_speech/__main__.py --model sepformer --chunk-size 5 path\to\video.mp4
+python src/separate_speech/__main__.py --detect-dialogues path\to\video.mp4  # Enable dialogue detection
 ```
 
 The tool will:
 1. Extract audio from the video files
 2. Process through speech separation model
 3. Save the isolated speech as audio files (WAV and/or MP3)
+4. Optionally detect and extract dialogues from different speakers (with --detect-dialogues)
 
-**Note:** The first run will download the speech separation model (approximately 1GB), which may take some time depending on your internet connection.
+**Note:** 
+- The first run will download the speech separation model (approximately 1GB), which may take some time depending on your internet connection.
+- For dialogue detection, SpeechBrain will be installed automatically. This feature identifies different speakers and saves their speech as separate audio files.
+
+### Dialogue Detection Prerequisites
+
+To use dialogue detection, you need:
+
+```bash
+# Install SpeechBrain and associated dependencies
+pip install speechbrain scikit-learn
+```
+
+If you encounter issues with dialogue detection:
+- Ensure the output directory has write permissions
+- For troubleshooting specific errors, check the log output
 
 ---
 
