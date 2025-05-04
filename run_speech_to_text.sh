@@ -35,7 +35,6 @@ if [ "$1" == "--help" ] || [ "$1" == "-h" ]; then
     echo "  --select             Force file selection prompt even when files are provided"
     echo "  --debug              Enable debug logging"
     echo "  --interactive        Force interactive audio selection mode"
-    echo "  --diarize            Enable speaker diarization (identifies different speakers in transcript)"
     echo "  --help               Show this help message"
     echo ""
     echo "If run without arguments, the script will show an interactive audio selection menu."
@@ -48,10 +47,10 @@ echo -e "\nRunning speech-to-text transcription..."
 # If no arguments are provided, use interactive mode
 if [ $# -eq 0 ]; then
     echo "Entering interactive mode..."
-    python -m src.speech_to_text --interactive --diarize
+    python -m src.speech_to_text --interactive
 else
-    # Otherwise, pass all arguments to the script with diarize flag
-    python -m src.speech_to_text --diarize "$@"
+    # Otherwise, pass all arguments to the script
+    python -m src.speech_to_text "$@"
 fi
 
 if [ $? -eq 0 ]; then

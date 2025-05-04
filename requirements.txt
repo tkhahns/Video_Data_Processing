@@ -21,9 +21,6 @@ soundfile>=0.12.1
 pydub>=0.25.1
 ffmpeg-python>=0.2.0
 
-# For speaker diarization
-pyannote.audio>=2.1.1  # Optional for improved diarization
-
 # For builds and troubleshooting
 sentencepiece>=0.1.99
 colorama>=0.4.6  # For colored terminal output
