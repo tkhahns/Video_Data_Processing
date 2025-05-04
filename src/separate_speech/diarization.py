@@ -3,7 +3,6 @@ Speaker diarization functionality for detecting different speakers in audio.
 Uses open source models that don't require authentication tokens.
 """
 import os
-import logging
 import torch
 import numpy as np
 

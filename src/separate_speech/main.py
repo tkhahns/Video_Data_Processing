@@ -184,14 +184,8 @@ def main():
         except ImportError:
             # Fall back to standard interface
             video_files, file_type_from_interactive = interface.select_videos_interactively(all_video_files)
-            
-            # Ask about dialogue detection
-            if video_files:
-                print("\n=== Dialogue Detection ===")
-                print("Would you like to detect and separate dialogues in the video?")
-                print("This will identify different speakers and save separate audio files for each dialogue.")
-                choice = input("Detect dialogues? (y/n): ").strip().lower()
-                detect_dialogues_from_interactive = choice.startswith('y')
+            # Don't prompt for dialogue detection - set to None to use command line arg
+            detect_dialogues_from_interactive = 1
     else:
         # Use provided input arguments
         video_files = all_video_files
