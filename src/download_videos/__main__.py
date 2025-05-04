@@ -6,13 +6,8 @@ import sys
 import os
 from pathlib import Path
 
-# Add the project root to the path for direct execution
-parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-sys.path.insert(0, parent_dir)
-
 # Import the colored logging system
-import colored_logging
-import init_logging
+from utils import init_logging
 
 # Initialize colored logging
 logger = init_logging.get_logger(__name__)
