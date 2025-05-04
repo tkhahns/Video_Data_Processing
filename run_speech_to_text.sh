@@ -19,7 +19,6 @@ source .venv/bin/activate
 if ! python -c "import torch transformers colorama" &> /dev/null; then
     echo -e "\nInstalling required packages..."
     pip install torch transformers tqdm colorama
-    pip install git+https://github.com/m-bain/whisperX.git
 fi
 
 # Help message if --help flag is provided

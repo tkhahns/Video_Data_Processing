@@ -59,6 +59,22 @@ def load_diarization_model(device="cpu"):
         logger.error(f"Error loading diarization model: {e}")
         return None
 
+def load_pyannote_pipeline(model_name="pyannote/speaker-diarization", device="cpu"):
+    """
+    Load pyannote.audio speaker diarization pipeline.
+    Returns pipeline or None if not available.
+    """
+    try:
+        from pyannote.audio import Pipeline
+        logger.info(f"Loading pyannote.audio pipeline: {model_name}")
+        pipeline = Pipeline.from_pretrained(model_name, use_auth_token=None)
+        pipeline.to(device)
+        logger.info("Successfully loaded pyannote.audio pipeline")
+        return pipeline
+    except Exception as e:
+        logger.warning(f"Could not load pyannote.audio pipeline: {e}")
+        return None
+
 def segment_audio(waveform, sample_rate, segment_length_sec=5.0, overlap_sec=1.0):
     """
     Segment audio into chunks for speaker diarization.
@@ -275,22 +291,64 @@ def detect_speech_presence(audio_file, threshold=0.3, min_speech_seconds=1.0):
         # Return True by default if detection fails
         return True, 0
 
-def perform_diarization(audio_file, embedding_model, min_speakers=1, max_speakers=8, min_speech_seconds=1.0):
+def perform_pyannote_diarization(audio_file, pipeline, min_speech_seconds=1.0):
     """
-    Perform speaker diarization on an audio file using SpeechBrain.
-    
-    Args:
-        audio_file: Path to audio file
-        embedding_model: SpeechBrain EncoderClassifier model
-        min_speakers: Minimum number of speakers to detect
-        max_speakers: Maximum number of speakers to detect
-        min_speech_seconds: Minimum duration of speech required to process file
-        
-    Returns:
-        Tuple of (segments, speech_detected)
-        - segments: List of speaker segments as (start_time, end_time, speaker_id) tuples
-        - speech_detected: Boolean indicating if speech was detected
+    Perform diarization using pyannote.audio pipeline.
+    Returns (segments, speech_detected)
     """
+    try:
+        import torchaudio
+        waveform, sample_rate = torchaudio.load(audio_file)
+        duration = waveform.shape[1] / sample_rate
+
+        diarization = pipeline(audio_file)
+        segments = []
+        speaker_map = {}
+        speaker_idx = 1
+
+        for turn, _, speaker in diarization.itertracks(yield_label=True):
+            # Map speaker labels to "Person 1", "Person 2", etc.
+            if speaker not in speaker_map:
+                speaker_map[speaker] = f"Person {speaker_idx}"
+                speaker_idx += 1
+            mapped_speaker = speaker_map[speaker]
+            segments.append((turn.start, turn.end, mapped_speaker))
+
+        # Filter out very short segments
+        segments = [seg for seg in segments if (seg[1] - seg[0]) >= 0.5]
+
+        total_speech = sum(seg[1] - seg[0] for seg in segments)
+        speech_detected = total_speech >= min_speech_seconds
+
+        if speech_detected:
+            logger.info(f"pyannote: Detected {len(segments)} segments, {total_speech:.2f}s speech")
+        else:
+            logger.warning("pyannote: No significant speech detected")
+
+        return segments, speech_detected
+    except Exception as e:
+        logger.error(f"Error in pyannote diarization: {e}")
+        return [], False
+
+def perform_diarization(audio_file, embedding_model=None, min_speakers=1, max_speakers=8, min_speech_seconds=1.0):
+    """
+    Perform speaker diarization on an audio file.
+    Tries pyannote.audio if available, else falls back to SpeechBrain.
+    """
+    # Try pyannote.audio first
+    try:
+        from pyannote.audio import Pipeline
+        pipeline = load_pyannote_pipeline(device="cpu")
+        if pipeline is not None:
+            return perform_pyannote_diarization(audio_file, pipeline, min_speech_seconds=min_speech_seconds)
+    except ImportError:
+        logger.info("pyannote.audio not available, falling back to SpeechBrain.")
+
+    # Fallback: SpeechBrain
+    if embedding_model is None:
+        logger.error("No embedding model provided for SpeechBrain diarization.")
+        return [], False
+
     try:
         import torchaudio
         import speechbrain as sb
@@ -403,7 +461,8 @@ def perform_diarization(audio_file, embedding_model, min_speakers=1, max_speaker
         # Create final segments
         final_segments = []
         for i, ((start_time, end_time), label) in enumerate(zip(segment_times, labels)):
-            final_segments.append((start_time, end_time, f"SPEAKER_{label}"))
+            # Use "Person N" label for consistency with pyannote
+            final_segments.append((start_time, end_time, f"Person {label+1}"))
             
         # Sort by start time
         final_segments.sort(key=lambda x: x[0])

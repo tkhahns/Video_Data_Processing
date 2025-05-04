@@ -22,17 +22,21 @@ except ImportError:
     logger = logging.getLogger(__name__)
 
 def check_diarization_prerequisites():
-    """Check if all prerequisites for diarization are met."""
-    # Check for speechbrain
+    """Check if all prerequisites for diarization are met (pyannote or speechbrain)."""
     try:
-        import speechbrain
-        version = getattr(speechbrain, "__version__", "unknown")
-        logger.info(f"Found speechbrain version {version}")
+        import pyannote.audio
+        logger.info("Found pyannote.audio for diarization.")
         return True
     except ImportError:
-        logger.error("speechbrain not installed. Cannot perform dialogue detection.")
-        logger.error("Install with: pip install speechbrain")
-        return False
+        try:
+            import speechbrain
+            version = getattr(speechbrain, "__version__", "unknown")
+            logger.info(f"Found speechbrain version {version} for fallback diarization.")
+            return True
+        except ImportError:
+            logger.error("Neither pyannote.audio nor speechbrain is installed. Cannot perform dialogue detection.")
+            logger.error("Install with: pip install pyannote.audio==2.1.1 or pip install speechbrain")
+            return False
 
 def process_file(video_path, output_dir, model_name, models_dir, chunk_size_sec=10, file_type="mp3", detect_dialogues=False, skip_no_speech=True, min_speech_seconds=1.0):
     """

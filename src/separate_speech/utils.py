@@ -46,15 +46,24 @@ def clean_memory():
         torch.cuda.empty_cache()
 
 def check_diarization_dependencies():
-    """Check if pyannote.audio is installed."""
+    """Check if pyannote.audio or speechbrain is installed."""
+    pyannote_ok = False
+    speechbrain_ok = False
     try:
         import pyannote.audio
         logger.info("pyannote.audio is available for speaker diarization")
-        return True
+        pyannote_ok = True
     except ImportError:
-        logger.warning("pyannote.audio is not installed. Speaker diarization will not be available.")
+        logger.warning("pyannote.audio is not installed. Speaker diarization with pyannote will not be available.")
         logger.warning("Install with: pip install pyannote.audio==2.1.1")
-        return False
+    try:
+        import speechbrain
+        logger.info("speechbrain is available for fallback diarization")
+        speechbrain_ok = True
+    except ImportError:
+        logger.warning("speechbrain is not installed. Fallback diarization will not be available.")
+        logger.warning("Install with: pip install speechbrain")
+    return pyannote_ok or speechbrain_ok
 
 def merge_adjacent_segments(segments, max_gap_seconds=1.0):
     """
