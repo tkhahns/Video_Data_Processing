@@ -38,6 +38,7 @@ if ($args.Count -gt 0 -and ($args[0] -eq "--help" -or $args[0] -eq "-h")) {
     Write-Host "  --recursive          Process video files in subdirectories recursively"
     Write-Host "  --debug              Enable debug logging"
     Write-Host "  --interactive        Force interactive video selection mode"
+    Write-Host "  --detect-dialogues   Enable dialogue detection (identifies different speakers)"
     Write-Host "  --help               Show this help message"
     Write-Host ""
     Write-Host "If run without arguments, the script will show an interactive video selection menu."
@@ -51,10 +52,10 @@ try {
     # If no arguments are provided, use interactive mode
     if ($args.Count -eq 0) {
         Write-Host "Entering interactive mode..." -ForegroundColor Yellow
-        python -m src.separate_speech --interactive
+        python -m src.separate_speech --interactive --detect-dialogues
     } else {
-        # Otherwise, pass all arguments to the script
-        python -m src.separate_speech $args
+        # Otherwise, pass all arguments to the script with detect-dialogues flag
+        python -m src.separate_speech --detect-dialogues $args
     }
     
     if ($LASTEXITCODE -eq 0) {

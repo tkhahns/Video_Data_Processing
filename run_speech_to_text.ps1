@@ -41,6 +41,7 @@ if ($args.Count -gt 0 -and ($args[0] -eq "--help" -or $args[0] -eq "-h")) {
     Write-Host "  --select             Force file selection prompt even when files are provided"
     Write-Host "  --debug              Enable debug logging"
     Write-Host "  --interactive        Force interactive audio selection mode"
+    Write-Host "  --diarize            Enable speaker diarization (identifies different speakers in transcript)"
     Write-Host "  --help               Show this help message"
     Write-Host ""
     Write-Host "If run without arguments, the script will show an interactive audio selection menu."
@@ -54,10 +55,10 @@ try {
     # If no arguments are provided, use interactive mode
     if ($args.Count -eq 0) {
         Write-Host "Entering interactive mode..." -ForegroundColor Yellow
-        python -m src.speech_to_text --interactive
+        python -m src.speech_to_text --interactive --diarize
     } else {
-        # Otherwise, pass all arguments to the script
-        python -m src.speech_to_text $args
+        # Otherwise, pass all arguments to the script with diarize flag
+        python -m src.speech_to_text --diarize $args
     }
     
     if ($LASTEXITCODE -eq 0) {

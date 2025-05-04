@@ -32,6 +32,7 @@ if [ "$1" == "--help" ] || [ "$1" == "-h" ]; then
     echo "  --recursive          Process video files in subdirectories recursively"
     echo "  --debug              Enable debug logging"
     echo "  --interactive        Force interactive video selection mode"
+    echo "  --detect-dialogues   Enable dialogue detection (identifies different speakers)"
     echo "  --help               Show this help message"
     echo ""
     echo "If run without arguments, the script will show an interactive video selection menu."
@@ -44,10 +45,10 @@ echo -e "\nRunning speech separation..."
 # If no arguments are provided, use interactive mode
 if [ $# -eq 0 ]; then
     echo "Entering interactive mode..."
-    python -m src.separate_speech --interactive
+    python -m src.separate_speech --interactive --detect-dialogues
 else
-    # Otherwise, pass all arguments to the script
-    python -m src.separate_speech "$@"
+    # Otherwise, pass all arguments to the script with detect-dialogues flag
+    python -m src.separate_speech --detect-dialogues "$@"
 fi
 
 if [ $? -eq 0 ]; then
