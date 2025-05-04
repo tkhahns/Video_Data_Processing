@@ -6,17 +6,9 @@ import logging
 import subprocess
 import gc
 import torch
-import sys
-import numpy as np
-from pathlib import Path
 
-# Try importing from utils package
-try:
-    from utils import init_logging
-    logger = init_logging.get_logger(__name__)
-except ImportError:
-    # Fall back to standard logging
-    logger = logging.getLogger(__name__)
+from utils import init_logging
+logger = init_logging.get_logger(__name__)
 
 def ensure_dir_exists(directory):
     """Create directory if it doesn't exist."""
