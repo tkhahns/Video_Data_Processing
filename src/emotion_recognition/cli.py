@@ -141,7 +141,6 @@ def main():
                 logger.info(f"Processing {video_name}...")
                 success = processor.process_video(
                     video_file, output_path, log_path, 
-                    use_feat=args.use_feat,
                     log_only=log_only
                 )
                 results[video_name] = success
@@ -154,8 +153,7 @@ def main():
                 args.input_dir,
                 args.output_dir,
                 args.log_dir,
-                args.extension,
-                use_feat=args.use_feat
+                args.extension
             )
         
         # Print summary
@@ -201,7 +199,6 @@ def main():
             logger.info(f"Processing {video_name}...")
             success = processor.process_video(
                 video_file, output_path, log_path, 
-                use_feat=args.use_feat,
                 log_only=log_only
             )
             results[video_name] = success

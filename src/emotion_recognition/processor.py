@@ -130,7 +130,7 @@ def process_video(input_path, output_path=None, log_path=None, show_preview=Fals
             else:
                 skip_count = 0
 
-            # Analyze emotions in the current frame using DeepFace
+            # Analyze emotions in the current frame
             faces = []
             try:
                 results = DeepFace.analyze(
@@ -262,7 +262,12 @@ def batch_process_videos(input_dir, output_dir, log_dir=None, file_extension="mp
         log_path = os.path.join(log_dir, f"{base_name}_emotions.csv") if log_dir else None
         
         logger.info(f"Processing {video_name}...")
-        success = process_video(input_path, output_path, log_path)
+        success = process_video(
+            input_path, 
+            output_path, 
+            log_path,
+            backend="opencv"  # Explicitly set backend to most reliable option
+        )
         results[video_name] = success
         
         # Clean memory after each video

@@ -67,6 +67,23 @@ def check_dependencies():
     except ImportError:
         missing_deps.append("numpy")
     
+    # Check for TensorFlow
+    try:
+        import tensorflow
+        logger.info(f"TensorFlow version: {tensorflow.__version__}")
+        
+        # For TF 2.13+, check for tf-keras
+        major, minor = map(int, tensorflow.__version__.split('.')[:2])
+        if (major == 2 and minor >= 13) or major > 2:
+            try:
+                import tf_keras
+                logger.info("tf-keras is available")
+            except ImportError:
+                logger.warning("TensorFlow 2.13+ detected but tf-keras not found")
+                missing_deps.append("tf-keras")
+    except ImportError:
+        missing_deps.append("tensorflow")
+    
     # Optional: Check for tqdm for progress bars
     try:
         import tqdm
