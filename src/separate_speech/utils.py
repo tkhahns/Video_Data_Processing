@@ -56,6 +56,17 @@ def check_diarization_dependencies():
         logger.warning("Install with: pip install pyannote.audio==2.1.1")
         return False
 
+def check_emotion_recognition_dependencies():
+    """Check if required packages for emotion recognition are installed."""
+    try:
+        import feat
+        logger.info("Py-Feat is available for emotion recognition")
+        return True
+    except ImportError:
+        logger.warning("Py-Feat is not installed. Emotion recognition will not be available.")
+        logger.warning("Install with: pip install py-feat==0.5.1")
+        return False
+
 def merge_adjacent_segments(segments, max_gap_seconds=1.0):
     """
     Merge adjacent segments from the same speaker if they're close enough.
