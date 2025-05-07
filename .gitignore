@@ -2,6 +2,6 @@ __pycache__
 .vscode
 .venv
 data
-models/downloaded/
+archive/models/downloaded/
 .DS_Store
 output
