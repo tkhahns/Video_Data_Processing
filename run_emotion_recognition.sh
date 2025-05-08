@@ -85,6 +85,22 @@ else
     echo "TensorFlow not detected, will attempt to install dependencies as needed."
 fi
 
+# Check for MediaPipe (for body pose estimation)
+echo "Checking for MediaPipe dependency..."
+if ! python3 -c "import mediapipe" &> /dev/null; then
+    echo "MediaPipe not found. Attempting to install..."
+    pip3 install mediapipe
+    
+    # Verify installation was successful
+    if ! python3 -c "import mediapipe" &> /dev/null; then
+        echo "Warning: Failed to install MediaPipe. Body pose estimation may not work properly."
+    else
+        echo "MediaPipe installed successfully."
+    fi
+else
+    echo "MediaPipe is already installed."
+fi
+
 # Make sure the default directories exist
 DATA_DIR="${PROJECT_ROOT}/data/videos"
 OUTPUT_DIR="${PROJECT_ROOT}/output/emotions"
@@ -103,8 +119,24 @@ fi
 export PYTHONPATH="$PROJECT_ROOT:$PYTHONPATH"
 
 # Run the emotion recognition module with all arguments passed to this script
-echo "Running Emotion Recognition module..."
-python3 -m src.emotion_recognition.cli "$@"
+echo "Running Emotion Recognition module with body pose estimation enabled by default..."
+
+# Check if --no-pose is already in the arguments
+NO_POSE_PRESENT=false
+for arg in "$@"; do
+  if [ "$arg" == "--no-pose" ]; then
+    NO_POSE_PRESENT=true
+    break
+  fi
+done
+
+if [ "$NO_POSE_PRESENT" = true ]; then
+    # If --no-pose is already in the arguments, don't add --with-pose
+    python3 -m src.emotion_recognition.cli "$@"
+else
+    # Add --with-pose to arguments (it's now the default)
+    python3 -m src.emotion_recognition.cli --with-pose "$@"
+fi
 
 # Exit with the same code as the python command
 exit $?
