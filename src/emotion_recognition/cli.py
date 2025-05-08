@@ -216,7 +216,7 @@ def main():
             video_name = os.path.basename(video_file)
             base_name = os.path.splitext(video_name)[0]
             
-            output_path = os.path.join(args.output_dir, f"{base_name}_emotions.mp4")
+            output_path = os.path.join(args.output_dir, f"{base_name}_emotions_and_pose.mp4")
             log_path = os.path.join(args.output_dir, f"{base_name}_emotions.csv")
             pose_log_path = os.path.join(args.output_dir, f"{base_name}_pose.json") if args.with_pose else None
             
