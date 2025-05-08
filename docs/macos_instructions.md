@@ -372,9 +372,9 @@ The tool will:
 
 ---
 
-## Detect Emotions in Videos
+## Detect Emotions and Body Poses in Videos
 
-You can detect and analyze facial emotions in videos using the provided emotion recognition tool:
+You can detect and analyze facial emotions and body poses in videos using the provided emotion recognition tool:
 
 ### Option 1: Using the convenience script (recommended)
 
@@ -393,13 +393,14 @@ chmod +x run_emotion_recognition.sh
 ./run_emotion_recognition.sh batch input/directory output/directory
 ./run_emotion_recognition.sh interactive --input_dir path/to/videos
 ./run_emotion_recognition.sh check
+./run_emotion_recognition.sh --no-pose  # Disable body pose estimation
 ```
 
 This script automatically:
 - Activates the virtual environment
-- Installs required dependencies (DeepFace, TensorFlow, etc.)
+- Installs required dependencies (DeepFace, TensorFlow, MediaPipe, etc.)
 - Creates the default directories if they don't exist
-- Processes videos through the emotion recognition model
+- Processes videos through the emotion recognition and pose estimation models
 
 When run in interactive mode, the tool will:
 1. Display a list of available video files (showing only filenames for clarity)
@@ -416,38 +417,25 @@ python -m src.emotion_recognition.cli
 # Process a single video file
 python -m src.emotion_recognition.cli process path/to/video.mp4
 
+# Disable body pose estimation
+python -m src.emotion_recognition.cli --no-pose process path/to/video.mp4
+
 # Additional options
 python -m src.emotion_recognition.cli process path/to/video.mp4 --output path/to/output.mp4
 python -m src.emotion_recognition.cli batch input/directory output/directory
 python -m src.emotion_recognition.cli check
 ```
 
-### Option 3: Running the Python script directly
-
-```bash
-# Basic usage
-python src/emotion_recognition/cli.py process path/to/video.mp4
-
-# Advanced options
-python src/emotion_recognition/cli.py process path/to/video.mp4 --output path/to/output.mp4 --log path/to/emotions.csv
-python src/emotion_recognition/cli.py process path/to/video.mp4 --skip 2 --backend opencv --log-only
-python src/emotion_recognition/cli.py batch input/directory output/directory
-```
-
 The tool will:
 1. Detect faces in each frame of the video
 2. Analyze emotions (happy, sad, angry, etc.) for each detected face
-3. Generate an annotated video with emotion labels
-4. Create a CSV log file with emotion details by timestamp
-
-Available face detection backends:
-- `opencv`: Default and fastest option
-- `ssd`: Single Shot MultiBox Detector
-- `mtcnn`: Multi-task Cascaded Convolutional Networks
-- `retinaface`: RetinaFace detector
-- `mediapipe`: MediaPipe Face Mesh
+3. Detect and track body poses using MediaPipe
+4. Generate an annotated video with emotion labels and pose landmarks
+5. Create a CSV log file with emotion and pose details by timestamp
+6. Create a JSON file with detailed pose data including joint positions and angles
 
 **Note:** 
 - Default input directory: `data/videos/`
 - Default output directory: `output/emotions/`
-- The tool uses DeepFace for emotion recognition
+- Body pose estimation is enabled by default and can be disabled with the `--no-pose` flag
+- The tool uses DeepFace for emotion recognition and MediaPipe for pose estimation
