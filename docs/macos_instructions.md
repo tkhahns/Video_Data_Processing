@@ -369,3 +369,85 @@ The tool will:
 3. Save the results as SRT subtitles (.srt), plain text with timestamps (.txt), or both formats
 
 **Note:** The first run will download the speech recognition model, which may take some time depending on your internet connection. If using a CPU-only system, the tool will automatically fall back to float32 precision for better compatibility.
+
+---
+
+## Detect Emotions in Videos
+
+You can detect and analyze facial emotions in videos using the provided emotion recognition tool:
+
+### Option 1: Using the convenience script (recommended)
+
+```bash
+# Make the script executable (first time only)
+chmod +x run_emotion_recognition.sh
+
+# Run the script with no arguments (interactive mode)
+./run_emotion_recognition.sh
+
+# Or process specific video files
+./run_emotion_recognition.sh process path/to/video.mp4
+
+# Additional options:
+./run_emotion_recognition.sh process path/to/video.mp4 --output path/to/output.mp4
+./run_emotion_recognition.sh batch input/directory output/directory
+./run_emotion_recognition.sh interactive --input_dir path/to/videos
+./run_emotion_recognition.sh check
+```
+
+This script automatically:
+- Activates the virtual environment
+- Installs required dependencies (DeepFace, TensorFlow, etc.)
+- Creates the default directories if they don't exist
+- Processes videos through the emotion recognition model
+
+When run in interactive mode, the tool will:
+1. Display a list of available video files (showing only filenames for clarity)
+2. Allow you to select specific files by number (e.g., "1,3,5") or choose "all"
+3. Prompt you to choose an output format (annotated video + log, or log only)
+4. Process the selected files with the chosen settings
+
+### Option 2: Running as a module
+
+```bash
+# Using Python module syntax (interactive mode)
+python -m src.emotion_recognition.cli
+
+# Process a single video file
+python -m src.emotion_recognition.cli process path/to/video.mp4
+
+# Additional options
+python -m src.emotion_recognition.cli process path/to/video.mp4 --output path/to/output.mp4
+python -m src.emotion_recognition.cli batch input/directory output/directory
+python -m src.emotion_recognition.cli check
+```
+
+### Option 3: Running the Python script directly
+
+```bash
+# Basic usage
+python src/emotion_recognition/cli.py process path/to/video.mp4
+
+# Advanced options
+python src/emotion_recognition/cli.py process path/to/video.mp4 --output path/to/output.mp4 --log path/to/emotions.csv
+python src/emotion_recognition/cli.py process path/to/video.mp4 --skip 2 --backend opencv --log-only
+python src/emotion_recognition/cli.py batch input/directory output/directory
+```
+
+The tool will:
+1. Detect faces in each frame of the video
+2. Analyze emotions (happy, sad, angry, etc.) for each detected face
+3. Generate an annotated video with emotion labels
+4. Create a CSV log file with emotion details by timestamp
+
+Available face detection backends:
+- `opencv`: Default and fastest option
+- `ssd`: Single Shot MultiBox Detector
+- `mtcnn`: Multi-task Cascaded Convolutional Networks
+- `retinaface`: RetinaFace detector
+- `mediapipe`: MediaPipe Face Mesh
+
+**Note:** 
+- Default input directory: `data/videos/`
+- Default output directory: `output/emotions/`
+- The tool uses DeepFace for emotion recognition
