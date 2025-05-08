@@ -76,8 +76,8 @@ def main():
                                     help='Input directory containing videos (default: data/videos)')
     interactive_parser.add_argument('--recursive', '-r', action='store_true',
                                    help='Search for video files recursively in subdirectories')
-    interactive_parser.add_argument('--output_dir', '-o', default='output/emotions',
-                                   help='Output directory for processed videos (default: output/emotions)')
+    interactive_parser.add_argument('--output_dir', '-o', default='output/emotions_and_pose',
+                                   help='Output directory for processed videos (default: output/emotions_and_pose)')
     interactive_parser.add_argument('--with-pose', '-p', action='store_true',
                                     help='Also perform body pose estimation')
     
@@ -154,7 +154,7 @@ def main():
                 video_name = os.path.basename(video_file)
                 base_name = os.path.splitext(video_name)[0]
                 
-                output_path = os.path.join(args.output_dir, f"{base_name}_emotions.mp4")
+                output_path = os.path.join(args.output_dir, f"{base_name}_emotions_and_pose.mp4")
                 log_path = os.path.join(args.log_dir, f"{base_name}_emotions.csv") if args.log_dir else None
                 pose_log_path = os.path.join(args.log_dir, f"{base_name}_pose.json") if args.with_pose else None
                 
