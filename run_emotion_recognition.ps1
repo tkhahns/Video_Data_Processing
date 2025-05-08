@@ -60,6 +60,26 @@ catch {
     }
 }
 
+# Install MediaPipe for body pose estimation
+Write-Host "Checking for MediaPipe dependency..."
+try {
+    python -c "import mediapipe"
+    Write-Host "MediaPipe is already installed."
+}
+catch {
+    Write-Host "MediaPipe not found. Attempting to install..."
+    pip install mediapipe
+    
+    # Verify installation
+    try {
+        python -c "import mediapipe"
+        Write-Host "MediaPipe installed successfully."
+    }
+    catch {
+        Write-Host "Warning: Failed to install MediaPipe. Body pose estimation may not work properly." -ForegroundColor Yellow
+    }
+}
+
 # Make sure the default directories exist
 $dataDir = Join-Path $ProjectRoot "data\videos"
 $outputDir = Join-Path $ProjectRoot "output\emotions"
@@ -77,9 +97,25 @@ if (-not (Test-Path $outputDir)) {
 # Add the project root to PYTHONPATH to allow imports
 $env:PYTHONPATH = "$ProjectRoot;$env:PYTHONPATH"
 
-Write-Host "Running Emotion Recognition module..." -ForegroundColor Green
+Write-Host "Running Emotion Recognition module with body pose estimation enabled by default..." -ForegroundColor Green
+
+# Check if --no-pose is already in the arguments
+$noPosePresent = $false
+foreach ($arg in $args) {
+    if ($arg -eq "--no-pose") {
+        $noPosePresent = $true
+        break
+    }
+}
+
 # Run the emotion recognition module with all arguments passed to this script
-python -m src.emotion_recognition.cli $args
+if ($noPosePresent) {
+    # If --no-pose is already in the arguments, don't add --with-pose
+    python -m src.emotion_recognition.cli $args
+} else {
+    # Add --with-pose to arguments (it's now the default)
+    python -m src.emotion_recognition.cli --with-pose $args
+}
 
 # Exit with the same code as the python command
 exit $LASTEXITCODE
