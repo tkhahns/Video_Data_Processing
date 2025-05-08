@@ -109,25 +109,44 @@ python -m src.download_models --dry-run
 
 ---
 
-## Troubleshooting
+## Complete Video Processing Pipeline
 
-- If you encounter `ModuleNotFoundError` despite the package being installed, try:
-  ```bash
-  pip uninstall [package-name]
-  pip install [package-name]
-  ```
+You can run the complete video processing pipeline using a single script. This will perform all processing steps in sequence:
 
-- For sentencepiece build errors:
-  ```bash
-  # Install without building isolation
-  pip install --prefer-binary sentencepiece
-  ```
+1. Download videos from SharePoint
+2. Process videos in parallel:
+   - Speech separation followed by speech-to-text
+   - Emotion and body pose recognition
 
-- If you still have import errors, verify you're using the correct Python interpreter:
-  ```bash
-  which python
-  # Should point to your virtual environment's .venv/bin/python
-  ```
+### Running the complete pipeline
+
+```bash
+# Make the script executable (first time only)
+chmod +x run_pipeline.sh
+
+# Run the pipeline with default settings
+./run_pipeline.sh
+
+# Or specify SharePoint URL to download videos from
+./run_pipeline.sh --url "https://your-sharepoint-site.com/folder-with-videos"
+```
+
+This will:
+1. Create a timestamped directory for all processing results
+2. Download videos (or use existing ones if download fails)
+3. Process speech separation in parallel with emotion recognition
+4. Run speech-to-text on the separated speech
+5. Provide a summary of results when complete
+
+All component scripts are located in the `scripts/macos/` directory and can also be run individually:
+
+```bash
+# Individual scripts
+./scripts/macos/run_download_videos.sh
+./scripts/macos/run_separate_speech.sh
+./scripts/macos/run_speech_to_text.sh
+./scripts/macos/run_emotion_recognition.sh
+```
 
 ---
 
@@ -139,18 +158,18 @@ You can download videos from SharePoint using the included browser automation to
 
 ```bash
 # Make the script executable (first time only)
-chmod +x run_download_videos.sh
+chmod +x scripts/macos/run_download_videos.sh
 
 # Run the script with no arguments (you'll be prompted for the URL)
-./run_download_videos.sh
+./scripts/macos/run_download_videos.sh
 
 # Or specify the URL directly
-./run_download_videos.sh --url "https://your-sharepoint-site.com/folder-with-videos"
+./scripts/macos/run_download_videos.sh --url "https://your-sharepoint-site.com/folder-with-videos"
 
 # Additional options:
-./run_download_videos.sh --url "https://your-sharepoint-site.com/folder-with-videos" --output-dir "./my-videos"
-./run_download_videos.sh --list-only
-./run_download_videos.sh --debug
+./scripts/macos/run_download_videos.sh --url "https://your-sharepoint-site.com/folder-with-videos" --output-dir "./my-videos"
+./scripts/macos/run_download_videos.sh --list-only
+./scripts/macos/run_download_videos.sh --debug
 ```
 
 This script automatically:
@@ -207,19 +226,19 @@ You can extract and separate speech from video files using the provided speech s
 
 ```bash
 # Make the script executable (first time only)
-chmod +x run_separate_speech.sh
+chmod +x scripts/macos/run_separate_speech.sh
 
 # Run the script with no arguments (interactive mode)
-./run_separate_speech.sh
+./scripts/macos/run_separate_speech.sh
 
 # Or process specific video files
-./run_separate_speech.sh path/to/video.mp4
+./scripts/macos/run_separate_speech.sh path/to/video.mp4
 
 # Additional options:
-./run_separate_speech.sh --output-dir "./my-speech-output" path/to/video.mp4
-./run_separate_speech.sh --file-type wav  # Choose output format: wav, mp3, or both
-./run_separate_speech.sh --model sepformer
-./run_separate_speech.sh --detect-dialogues  # Enable dialogue detection
+./scripts/macos/run_separate_speech.sh --output-dir "./my-speech-output" path/to/video.mp4
+./scripts/macos/run_separate_speech.sh --file-type wav  # Choose output format: wav, mp3, or both
+./scripts/macos/run_separate_speech.sh --model sepformer
+./scripts/macos/run_separate_speech.sh --detect-dialogues  # Enable dialogue detection
 ```
 
 This script automatically:
@@ -310,19 +329,19 @@ You can transcribe speech audio files to text using the provided speech-to-text 
 
 ```bash
 # Make the script executable (first time only)
-chmod +x run_speech_to_text.sh
+chmod +x scripts/macos/run_speech_to_text.sh
 
 # Run the script with no arguments (interactive mode)
-./run_speech_to_text.sh
+./scripts/macos/run_speech_to_text.sh
 
 # Or process specific audio files
-./run_speech_to_text.sh path/to/audio.wav
+./scripts/macos/run_speech_to_text.sh path/to/audio.wav
 
 # Additional options:
-./run_speech_to_text.sh --output-dir "./my-transcripts" path/to/audio.mp3
-./run_speech_to_text.sh --language fr  # Specify language (default: en)
-./run_speech_to_text.sh --model whisperx  # Choose model (whisperx, xlsr)
-./run_speech_to_text.sh --select  # Force file selection even with files specified
+./scripts/macos/run_speech_to_text.sh --output-dir "./my-transcripts" path/to/audio.mp3
+./scripts/macos/run_speech_to_text.sh --language fr  # Specify language (default: en)
+./scripts/macos/run_speech_to_text.sh --model whisperx  # Choose model (whisperx, xlsr)
+./scripts/macos/run_speech_to_text.sh --select  # Force file selection even with files specified
 ```
 
 This script automatically:
@@ -380,20 +399,20 @@ You can detect and analyze facial emotions and body poses in videos using the pr
 
 ```bash
 # Make the script executable (first time only)
-chmod +x run_emotion_recognition.sh
+chmod +x scripts/macos/run_emotion_recognition.sh
 
 # Run the script with no arguments (interactive mode)
-./run_emotion_recognition.sh
+./scripts/macos/run_emotion_recognition.sh
 
 # Or process specific video files
-./run_emotion_recognition.sh process path/to/video.mp4
+./scripts/macos/run_emotion_recognition.sh process path/to/video.mp4
 
 # Additional options:
-./run_emotion_recognition.sh process path/to/video.mp4 --output path/to/output.mp4
-./run_emotion_recognition.sh batch input/directory output/directory
-./run_emotion_recognition.sh interactive --input_dir path/to/videos
-./run_emotion_recognition.sh check
-./run_emotion_recognition.sh --no-pose  # Disable body pose estimation
+./scripts/macos/run_emotion_recognition.sh process path/to/video.mp4 --output path/to/output.mp4
+./scripts/macos/run_emotion_recognition.sh batch input/directory output/directory
+./scripts/macos/run_emotion_recognition.sh interactive --input_dir path/to/videos
+./scripts/macos/run_emotion_recognition.sh check
+./scripts/macos/run_emotion_recognition.sh --no-pose  # Disable body pose estimation
 ```
 
 This script automatically:

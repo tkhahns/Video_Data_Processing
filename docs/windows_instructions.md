@@ -138,21 +138,41 @@ python -m src.download_models --dry-run
 
 ---
 
-## Troubleshooting
+## Complete Video Processing Pipeline
 
-- If you encounter `ModuleNotFoundError` despite the package being installed, try:
-  ```bash
-  pip uninstall [package-name]
-  pip install [package-name]
-  ```
+You can run the complete video processing pipeline using a single script. This will perform all processing steps in sequence:
 
-- If you're having permission issues, try running Command Prompt or PowerShell as Administrator
+1. Download videos from SharePoint
+2. Process videos in parallel:
+   - Speech separation followed by speech-to-text
+   - Emotion and body pose recognition
 
-- If you still have import errors, verify you're using the correct Python interpreter:
-  ```bash
-  where python
-  # Should point to your virtual environment's .venv\Scripts\python.exe
-  ```
+### Running the complete pipeline
+
+```bash
+# Run the pipeline with default settings
+.\run_pipeline.ps1
+
+# Or specify SharePoint URL to download videos from
+.\run_pipeline.ps1 --url "https://your-sharepoint-site.com/folder-with-videos"
+```
+
+This will:
+1. Create a timestamped directory for all processing results
+2. Download videos (or use existing ones if download fails)
+3. Process speech separation in parallel with emotion recognition
+4. Run speech-to-text on the separated speech
+5. Provide a summary of results when complete
+
+All component scripts are located in the `scripts\windows\` directory and can also be run individually:
+
+```bash
+# Individual scripts
+.\scripts\windows\run_download_videos.ps1
+.\scripts\windows\run_separate_speech.ps1
+.\scripts\windows\run_speech_to_text.ps1
+.\scripts\windows\run_emotion_recognition.ps1
+```
 
 ---
 
@@ -164,15 +184,15 @@ You can download videos from SharePoint using the included browser automation to
 
 ```bash
 # Run the script with no arguments (you'll be prompted for the URL)
-.\run_download_videos.ps1
+.\scripts\windows\run_download_videos.ps1
 
 # Or specify the URL directly
-.\run_download_videos.ps1 --url "https://your-sharepoint-site.com/folder-with-videos"
+.\scripts\windows\run_download_videos.ps1 --url "https://your-sharepoint-site.com/folder-with-videos"
 
 # Additional options:
-.\run_download_videos.ps1 --url "https://your-sharepoint-site.com/folder-with-videos" --output-dir "./my-videos"
-.\run_download_videos.ps1 --list-only
-.\run_download_videos.ps1 --debug
+.\scripts\windows\run_download_videos.ps1 --url "https://your-sharepoint-site.com/folder-with-videos" --output-dir "./my-videos"
+.\scripts\windows\run_download_videos.ps1 --list-only
+.\scripts\windows\run_download_videos.ps1 --debug
 ```
 
 This script automatically:
@@ -223,16 +243,16 @@ You can extract and separate speech from video files using the provided speech s
 
 ```bash
 # Run the script with no arguments (interactive mode)
-.\run_separate_speech.ps1
+.\scripts\windows\run_separate_speech.ps1
 
 # Or process specific video files
-.\run_separate_speech.ps1 path\to\video.mp4
+.\scripts\windows\run_separate_speech.ps1 path\to\video.mp4
 
 # Additional options:
-.\run_separate_speech.ps1 --output-dir "./my-speech-output" path\to\video.mp4
-.\run_separate_speech.ps1 --file-type wav  # Choose output format: wav, mp3, or both
-.\run_separate_speech.ps1 --model sepformer
-.\run_separate_speech.ps1 --detect-dialogues  # Enable dialogue detection
+.\scripts\windows\run_separate_speech.ps1 --output-dir "./my-speech-output" path\to\video.mp4
+.\scripts\windows\run_separate_speech.ps1 --file-type wav  # Choose output format: wav, mp3, or both
+.\scripts\windows\run_separate_speech.ps1 --model sepformer
+.\scripts\windows\run_separate_speech.ps1 --detect-dialogues  # Enable dialogue detection
 ```
 
 This script automatically:
@@ -301,16 +321,16 @@ You can transcribe speech audio files to text using the provided speech-to-text 
 
 ```bash
 # Run the script with no arguments (interactive mode)
-.\run_speech_to_text.ps1
+.\scripts\windows\run_speech_to_text.ps1
 
 # Or process specific audio files
-.\run_speech_to_text.ps1 path\to\audio.wav
+.\scripts\windows\run_speech_to_text.ps1 path\to\audio.wav
 
 # Additional options:
-.\run_speech_to_text.ps1 --output-dir "./my-transcripts" path\to\audio.mp3
-.\run_speech_to_text.ps1 --language fr  # Specify language (default: en)
-.\run_speech_to_text.ps1 --model whisperx  # Choose model (whisperx, xlsr)
-.\run_speech_to_text.ps1 --select  # Force file selection even with files specified
+.\scripts\windows\run_speech_to_text.ps1 --output-dir "./my-transcripts" path\to\audio.mp3
+.\scripts\windows\run_speech_to_text.ps1 --language fr  # Specify language (default: en)
+.\scripts\windows\run_speech_to_text.ps1 --model whisperx  # Choose model (whisperx, xlsr)
+.\scripts\windows\run_speech_to_text.ps1 --select  # Force file selection even with files specified
 ```
 
 This script automatically:
@@ -368,17 +388,17 @@ You can detect and analyze facial emotions and body poses in videos using the pr
 
 ```bash
 # Run the script with no arguments (interactive mode)
-.\run_emotion_recognition.ps1
+.\scripts\windows\run_emotion_recognition.ps1
 
 # Or process specific video files
-.\run_emotion_recognition.ps1 process path\to\video.mp4
+.\scripts\windows\run_emotion_recognition.ps1 process path\to\video.mp4
 
 # Additional options:
-.\run_emotion_recognition.ps1 process path\to\video.mp4 --output path\to\output.mp4
-.\run_emotion_recognition.ps1 batch input\directory output\directory
-.\run_emotion_recognition.ps1 interactive --input_dir path\to\videos
-.\run_emotion_recognition.ps1 check
-.\run_emotion_recognition.ps1 --no-pose  # Disable body pose estimation
+.\scripts\windows\run_emotion_recognition.ps1 process path\to\video.mp4 --output path\to\output.mp4
+.\scripts\windows\run_emotion_recognition.ps1 batch input\directory output\directory
+.\scripts\windows\run_emotion_recognition.ps1 interactive --input_dir path\to\videos
+.\scripts\windows\run_emotion_recognition.ps1 check
+.\scripts\windows\run_emotion_recognition.ps1 --no-pose  # Disable body pose estimation
 ```
 
 This script automatically:
