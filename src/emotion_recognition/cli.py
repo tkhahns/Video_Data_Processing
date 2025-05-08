@@ -32,6 +32,11 @@ def main():
     parser = argparse.ArgumentParser(description='Facial Emotion Recognition from Video. '
                                                  'If no command is specified, runs in interactive mode.')
     
+    # Add global options - these should be before the subparsers
+    parser.add_argument('--use-feat', action='store_true', help='Use py-feat for emotion recognition instead of DeepFace')
+    parser.add_argument('--with-pose', '-p', action='store_true', help='Enable body pose estimation (default)')
+    parser.add_argument('--no-pose', action='store_true', help='Disable body pose estimation')
+    
     # Create subparsers for different commands
     subparsers = parser.add_subparsers(dest='command', help='Command to run')
     
@@ -47,6 +52,7 @@ def main():
                                help='Face detection backend (opencv, ssd, mtcnn, etc.)')
     single_parser.add_argument('--log-only', action='store_true', 
                                help='Only generate log, skip video output for faster processing')
+    single_parser.add_argument('--pose-log', help='Path to save pose data (JSON)', default=None)
     
     # 2. Batch processing command
     batch_parser = subparsers.add_parser('batch', help='Process multiple videos in a directory')
@@ -58,6 +64,8 @@ def main():
                               help='Enable interactive file selection')
     batch_parser.add_argument('--recursive', '-r', action='store_true',
                               help='Search for video files recursively in subdirectories')
+    batch_parser.add_argument('--with-pose', '-p', action='store_true',
+                              help='Also perform body pose estimation')
     
     # 3. Check dependencies command
     check_parser = subparsers.add_parser('check', help='Check if all dependencies are installed')
@@ -70,6 +78,8 @@ def main():
                                    help='Search for video files recursively in subdirectories')
     interactive_parser.add_argument('--output_dir', '-o', default='output/emotions',
                                    help='Output directory for processed videos (default: output/emotions)')
+    interactive_parser.add_argument('--with-pose', '-p', action='store_true',
+                                    help='Also perform body pose estimation')
     
     # Parse arguments
     args = parser.parse_args()
@@ -83,6 +93,12 @@ def main():
         args.recursive = False
         args.output_dir = 'output/emotions'
 
+    # Set body pose estimation as default, unless --no-pose is specified
+    if not hasattr(args, 'with_pose'):
+        args.with_pose = True
+    if hasattr(args, 'no_pose') and args.no_pose:
+        args.with_pose = False
+
     # Check the command and run the corresponding function
     if args.command == 'process':
         # Check dependencies before processing
@@ -91,6 +107,7 @@ def main():
             return 1
             
         logger.info(f"Processing video: {args.input}")
+        logger.info(f"Body pose estimation: {'enabled' if args.with_pose else 'disabled'}")
         
         # Process the video
         success = processor.process_video(
@@ -100,7 +117,9 @@ def main():
             show_preview=args.show,
             skip_frames=args.skip,
             backend=args.backend,
-            log_only=getattr(args, 'log_only', False)
+            log_only=getattr(args, 'log_only', False),
+            with_pose=args.with_pose,
+            pose_log_path=getattr(args, 'pose_log', None)
         )
         
         return 0 if success else 1
@@ -137,11 +156,14 @@ def main():
                 
                 output_path = os.path.join(args.output_dir, f"{base_name}_emotions.mp4")
                 log_path = os.path.join(args.log_dir, f"{base_name}_emotions.csv") if args.log_dir else None
+                pose_log_path = os.path.join(args.log_dir, f"{base_name}_pose.json") if args.with_pose else None
                 
                 logger.info(f"Processing {video_name}...")
                 success = processor.process_video(
                     video_file, output_path, log_path, 
-                    log_only=log_only
+                    log_only=log_only,
+                    with_pose=args.with_pose,
+                    pose_log_path=pose_log_path
                 )
                 results[video_name] = success
                 
@@ -153,7 +175,8 @@ def main():
                 args.input_dir,
                 args.output_dir,
                 args.log_dir,
-                args.extension
+                args.extension,
+                with_pose=args.with_pose
             )
         
         # Print summary
@@ -195,11 +218,14 @@ def main():
             
             output_path = os.path.join(args.output_dir, f"{base_name}_emotions.mp4")
             log_path = os.path.join(args.output_dir, f"{base_name}_emotions.csv")
+            pose_log_path = os.path.join(args.output_dir, f"{base_name}_pose.json") if args.with_pose else None
             
             logger.info(f"Processing {video_name}...")
             success = processor.process_video(
                 video_file, output_path, log_path, 
-                log_only=log_only
+                log_only=log_only,
+                with_pose=args.with_pose,
+                pose_log_path=pose_log_path
             )
             results[video_name] = success
             

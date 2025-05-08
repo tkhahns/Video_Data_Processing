@@ -6,9 +6,18 @@ import cv2
 import logging
 import numpy as np
 import torch
+import json
 from deepface import DeepFace
 from pathlib import Path
 from . import utils
+
+# Import the body pose estimator
+try:
+    from src.body_pose.estimator import PoseEstimator
+    from src.body_pose.utils import overlay_pose_text, save_pose_data
+    POSE_AVAILABLE = True
+except ImportError:
+    POSE_AVAILABLE = False
 
 # Try importing from utils package
 try:
@@ -20,7 +29,8 @@ except ImportError:
     logger.setLevel(logging.INFO)
 
 def process_video(input_path, output_path=None, log_path=None, show_preview=False, 
-                  skip_frames=0, backend="opencv", model_name="emotion", log_only=False):
+                  skip_frames=0, backend="opencv", model_name="emotion", log_only=False,
+                  with_pose=False, pose_log_path=None):
     """
     Process an input video to detect faces and recognize emotions frame by frame.
     Optionally saves annotated video and logs emotions every 1 second.
@@ -34,6 +44,8 @@ def process_video(input_path, output_path=None, log_path=None, show_preview=Fals
         backend (str): Face detection backend ("opencv", "ssd", "mtcnn", etc.).
         model_name (str): Emotion recognition model to use.
         log_only (bool): If True, only generate the log file, skip video output entirely.
+        with_pose (bool): If True, also perform body pose estimation.
+        pose_log_path (str, optional): Path to save pose data log (JSON).
     
     Returns:
         bool: True if processing completed successfully, False otherwise.
@@ -58,6 +70,13 @@ def process_video(input_path, output_path=None, log_path=None, show_preview=Fals
         log_path = os.path.join(log_dir, f"{input_name}_emotions.csv")
         logger.info(f"No log path specified. Will use: {log_path}")
     
+    # Create default pose log path if pose estimation is enabled
+    if with_pose and pose_log_path is None:
+        log_dir = os.path.dirname(log_path)
+        input_name = os.path.splitext(os.path.basename(input_path))[0]
+        pose_log_path = os.path.join(log_dir, f"{input_name}_pose.json")
+        logger.info(f"No pose log path specified. Will use: {pose_log_path}")
+    
     # Set output_path to None if log_only mode is enabled
     if log_only:
         output_path = None
@@ -76,6 +95,23 @@ def process_video(input_path, output_path=None, log_path=None, show_preview=Fals
     
     logger.info(f"Processing video: {input_path}")
     logger.info(f"Resolution: {width}x{height}, FPS: {fps:.2f}, Total frames: {total_frames}")
+
+    # Initialize pose estimator if requested
+    pose_estimator = None
+    pose_data_by_second = {}
+    
+    if with_pose:
+        if not POSE_AVAILABLE:
+            logger.warning("Body pose estimation requested but mediapipe is not available. Install with: pip install mediapipe")
+            with_pose = False
+        else:
+            logger.info("Initializing body pose estimator")
+            pose_estimator = PoseEstimator(
+                static_image_mode=False,
+                model_complexity=1,
+                min_detection_confidence=0.5,
+                min_tracking_confidence=0.5
+            )
 
     # Only initialize video writer if not in log_only mode
     if output_path and not log_only:
@@ -98,7 +134,13 @@ def process_video(input_path, output_path=None, log_path=None, show_preview=Fals
         if log_dir and not os.path.exists(log_dir):
             os.makedirs(log_dir)
         log_file = open(log_path, 'w')
-        log_file.write('time_seconds,frame_number,emotions\n')
+        
+        # Write header with pose columns if enabled
+        header = 'time_seconds,frame_number,emotions'
+        if with_pose:
+            header += ',posture'
+        log_file.write(header + '\n')
+        
         logger.info(f"Will save emotion log to: {log_path}")
 
     frame_count = 0
@@ -130,6 +172,14 @@ def process_video(input_path, output_path=None, log_path=None, show_preview=Fals
             else:
                 skip_count = 0
 
+            # Process body pose if enabled
+            pose_data = {}
+            if with_pose and pose_estimator:
+                try:
+                    frame, pose_data = pose_estimator.process_frame(frame)
+                except Exception as e:
+                    logger.warning(f"Frame {frame_count}: Error processing body pose: {e}")
+
             # Analyze emotions in the current frame
             faces = []
             try:
@@ -144,7 +194,7 @@ def process_video(input_path, output_path=None, log_path=None, show_preview=Fals
                 logger.warning(f"Frame {frame_count}: Error analyzing emotions: {e}")
                 faces = []
 
-            # Log emotions every 1 second
+            # Log emotions and pose every 1 second
             current_second = int(frame_count / fps)
             if log_file and current_second != last_logged_second:
                 emotions = []
@@ -152,12 +202,24 @@ def process_video(input_path, output_path=None, log_path=None, show_preview=Fals
                     emotion = face['dominant_emotion']
                     emotions.append(f"face{face_idx+1}:{emotion}")
                 
-                log_file.write(f"{current_second},{frame_count}," + ";".join(emotions) + "\n")
+                log_line = f"{current_second},{frame_count}," + ";".join(emotions)
+                
+                # Add pose data to log if available
+                if with_pose and pose_data:
+                    posture = pose_data.get("posture", {})
+                    position = posture.get("position", "unknown")
+                    arms = posture.get("arms", "unknown")
+                    log_line += f",position:{position};arms:{arms}"
+                    
+                    # Store pose data for this second
+                    pose_data_by_second[str(current_second)] = pose_data
+                
+                log_file.write(log_line + "\n")
                 last_logged_second = current_second
 
             # Only perform video-related operations if not in log_only mode
             if (output_path and not log_only) or show_preview:
-                # Annotate frame
+                # Annotate frame with emotions
                 for face_idx, face in enumerate(faces):
                     emotion = face['dominant_emotion']
                     region = face['region']
@@ -176,12 +238,29 @@ def process_video(input_path, output_path=None, log_path=None, show_preview=Fals
                         (0, 255, 0), 
                         2
                     )
+                
+                # Overlay pose information if available
+                if with_pose and pose_data and "posture" in pose_data:
+                    # Add pose info text at the top-right
+                    posture = pose_data["posture"]
+                    position = posture.get("position", "unknown")
+                    arms = posture.get("arms", "unknown")
+                    
+                    cv2.putText(
+                        frame,
+                        f"Posture: {position.capitalize()}, Arms: {arms.replace('_', ' ').capitalize()}",
+                        (width - 450, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.7,
+                        (0, 0, 255),
+                        2
+                    )
 
                 if output_path and not log_only:
                     out.write(frame)
                     
                 if show_preview:
-                    cv2.imshow('Emotion Recognition', frame)
+                    cv2.imshow('Emotion Recognition + Pose', frame)
                     if cv2.waitKey(1) & 0xFF == ord('q'):
                         break
 
@@ -193,6 +272,15 @@ def process_video(input_path, output_path=None, log_path=None, show_preview=Fals
 
         logger.info(f"Processed {frame_count} frames")
         
+        # Save pose data log if requested
+        if with_pose and pose_log_path and pose_data_by_second:
+            try:
+                with open(pose_log_path, 'w') as f:
+                    json.dump(pose_data_by_second, f, default=lambda o: float(o) if isinstance(o, (np.float32, np.float64)) else o)
+                logger.info(f"Saved pose data log to {pose_log_path}")
+            except Exception as e:
+                logger.error(f"Error saving pose data log: {e}")
+        
     except Exception as e:
         logger.error(f"Error processing video: {e}")
         return False
@@ -201,6 +289,9 @@ def process_video(input_path, output_path=None, log_path=None, show_preview=Fals
         # Clean up resources
         if progress_bar:
             progress_bar.close()
+        
+        if with_pose and pose_estimator:
+            pose_estimator.close()
             
         cap.release()
         if output_path and 'out' in locals():

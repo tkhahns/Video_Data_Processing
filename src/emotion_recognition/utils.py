@@ -84,6 +84,15 @@ def check_dependencies():
     except ImportError:
         missing_deps.append("tensorflow")
     
+    # Check for MediaPipe (for body pose estimation)
+    try:
+        import mediapipe
+        logger.info(f"MediaPipe version: {mediapipe.__version__}")
+    except ImportError:
+        logger.warning("MediaPipe not installed. Body pose estimation will not be available.")
+        logger.warning("Install with: pip install mediapipe")
+        # Not considered a critical dependency
+    
     # Optional: Check for tqdm for progress bars
     try:
         import tqdm
