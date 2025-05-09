@@ -33,7 +33,6 @@ def main():
                                                  'If no command is specified, runs in interactive mode.')
     
     # Add global options - these should be before the subparsers
-    parser.add_argument('--use-feat', action='store_true', help='Use py-feat for emotion recognition instead of DeepFace')
     parser.add_argument('--with-pose', '-p', action='store_true', help='Enable body pose estimation (default)')
     parser.add_argument('--no-pose', action='store_true', help='Disable body pose estimation')
     
