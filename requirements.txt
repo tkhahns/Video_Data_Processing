@@ -1,4 +1,5 @@
-numpy>=1.25.0
+# Ensure numpy is compatible with both mediapipe and tensorflow
+numpy>=1.26.0,<2.0.0  # mediapipe requires <2.0.0, tensorflow requires >=1.26.0,<2.2.0
 pandas>=2.1.0
 transformers>=4.33.0
 huggingface-hub>=0.17.0
