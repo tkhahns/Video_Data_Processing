@@ -27,41 +27,53 @@ catch {
     exit 1
 }
 
-# Check for and create virtual environment if needed - always use absolute paths
-$VenvPath = Join-Path $ProjectRoot ".venv"
-$AltVenvPath = Join-Path $ProjectRoot "venv"
+# Check if Poetry is installed
+$poetryInstalled = $null
+try {
+    $poetryInstalled = (Get-Command poetry -ErrorAction Stop) -ne $null
+} catch {
+    $poetryInstalled = $false
+}
 
-# Always use absolute paths to avoid creating venvs in wrong locations
-if (Test-Path (Join-Path $VenvPath "Scripts\Activate.ps1")) {
-    Write-Host "Found existing virtual environment at $VenvPath" -ForegroundColor Green
-} elseif (Test-Path (Join-Path $AltVenvPath "Scripts\Activate.ps1")) {
-    Write-Host "Found existing virtual environment at $AltVenvPath" -ForegroundColor Green
-} else {
-    Write-Host "No virtual environment found. Creating one at $VenvPath..." -ForegroundColor Yellow
-    # Change to project root directory before creating the venv
-    Push-Location $ProjectRoot
-    python -m venv .venv
-    Pop-Location
+if (-not $poetryInstalled) {
+    Write-Host "Poetry not found. Installing Poetry..." -ForegroundColor Yellow
     
-    if (-not $?) {
-        Write-Error "Failed to create virtual environment. Please check your Python installation."
+    # Install Poetry using the PowerShell installer script
+    (Invoke-WebRequest -Uri https://install.python-poetry.org -UseBasicParsing).Content | python -
+    
+    # Add Poetry to the PATH for this session
+    $env:PATH = "$env:USERPROFILE\.poetry\bin;$env:PATH"
+    
+    # Verify installation was successful
+    try {
+        $poetryInstalled = (Get-Command poetry -ErrorAction Stop) -ne $null
+        if ($poetryInstalled) {
+            Write-Host "Poetry installed successfully." -ForegroundColor Green
+        } else {
+            Write-Host "Failed to install Poetry. Please install manually from https://python-poetry.org/docs/#installation" -ForegroundColor Red
+            exit 1
+        }
+    } catch {
+        Write-Host "Failed to install Poetry. Please install manually from https://python-poetry.org/docs/#installation" -ForegroundColor Red
         exit 1
     }
-    Write-Host "Virtual environment created successfully at $VenvPath." -ForegroundColor Green
 }
 
-# Activate virtual environment using absolute paths
-if (Test-Path (Join-Path $VenvPath "Scripts\Activate.ps1")) {
-    Write-Host "Activating virtual environment from $VenvPath..." -ForegroundColor Green
-    & (Join-Path $VenvPath "Scripts\Activate.ps1")
-} elseif (Test-Path (Join-Path $AltVenvPath "Scripts\Activate.ps1")) {
-    Write-Host "Activating virtual environment from $AltVenvPath..." -ForegroundColor Green
-    & (Join-Path $AltVenvPath "Scripts\Activate.ps1")
-}
+# Configure Poetry to create the virtualenv in the project directory
+Write-Host "Configuring Poetry..." -ForegroundColor Green
+poetry config virtualenvs.in-project true
 
-# Install dependencies from requirements.txt using absolute path
-Write-Host "Installing required dependencies..." -ForegroundColor Green
-pip install -r (Join-Path $ProjectRoot "requirements.txt")
+# Set environment variables to suppress model download output
+$env:HF_HUB_DISABLE_PROGRESS_BARS = "1"
+$env:TRANSFORMERS_VERBOSITY = "error"
+$env:TOKENIZERS_PARALLELISM = "false"
+$env:PYTHONWARNINGS = "ignore"
+
+# Install base dependencies
+Write-Host "Installing common dependencies..." -ForegroundColor Green
+Push-Location $ProjectRoot
+poetry install --no-root
+Pop-Location
 
 # Create and ensure essential directories exist
 $DataDir = Join-Path $ProjectRoot "data"
@@ -131,8 +143,18 @@ switch ($videoChoice) {
 $downloadExit = 0
 if ($videoChoice -eq "2") {
     Write-Host "`n===== Step 1: Download Videos =====" -ForegroundColor Green
-    & "$ProjectRoot\scripts\windows\run_download_videos.ps1" --output-dir $videoDir @args
+    
+    # Install download dependencies
+    Write-Host "Installing download dependencies..." -ForegroundColor Green
+    Push-Location $ProjectRoot
+    poetry install --only download
+    Pop-Location
+    
+    # Run the download script with poetry
+    Push-Location $ProjectRoot
+    poetry run python -m src.download_videos --output-dir $videoDir @args
     $downloadExit = $LASTEXITCODE
+    Pop-Location
 
     if ($downloadExit -ne 0) {
         Write-Host "Video download failed or was canceled (exit code $downloadExit)." -ForegroundColor Red
@@ -148,35 +170,92 @@ if ($videoChoice -eq "2") {
 # Step 2a: Speech Separation (in background)
 Write-Host "`n===== Step 2a: Speech Separation =====" -ForegroundColor Green
 $speechJob = Start-Job -ScriptBlock {
-    param($scriptPath, $outputDir, $videoDir)
-    & "$scriptPath" --output-dir "$outputDir" "$videoDir"
-    return $LASTEXITCODE
-} -ArgumentList "$ProjectRoot\scripts\windows\run_separate_speech.ps1", "${pipelineDir}\speech", $videoDir
+    param($projectRoot, $pipelineDir, $videoDir)
+    
+    # Change to project root to access Poetry config
+    Set-Location $projectRoot
+    
+    # Set environment variables in the job
+    $env:HF_HUB_DISABLE_PROGRESS_BARS = "1"
+    $env:TRANSFORMERS_VERBOSITY = "error"
+    $env:TOKENIZERS_PARALLELISM = "false"
+    $env:PYTHONWARNINGS = "ignore"
+    
+    # Install speech dependencies in an isolated environment
+    Write-Host "Installing speech dependencies..." -ForegroundColor Yellow
+    poetry install --with common --with speech --no-root
+    
+    # Run speech separation with quiet flag
+    $speechExit = 0
+    try {
+        poetry run python -m src.separate_speech --quiet --output-dir "${pipelineDir}\speech" "${videoDir}"
+        $speechExit = $LASTEXITCODE
+    } catch {
+        $speechExit = 1
+    }
+    
+    # If speech separation succeeded, run speech-to-text
+    $sttExit = 1
+    if ($speechExit -eq 0) {
+        try {
+            poetry run python -m src.speech_to_text --quiet --input-dir "${pipelineDir}\speech" --output-dir "${pipelineDir}\transcripts"
+            $sttExit = $LASTEXITCODE
+        } catch {
+            $sttExit = 1
+        }
+    }
+    
+    # Return exit codes
+    return @{
+        SpeechExit = $speechExit
+        SttExit = $sttExit
+    }
+} -ArgumentList $ProjectRoot, $pipelineDir, $videoDir
 
 # Step 2b: Emotion Recognition (in background)
 Write-Host "`n===== Step 2b: Emotion Recognition =====" -ForegroundColor Green
 $emotionJob = Start-Job -ScriptBlock {
-    param($scriptPath, $outputDir, $videoDir)
-    & "$scriptPath" --output-dir "$outputDir" "$videoDir"
-    return $LASTEXITCODE
-} -ArgumentList "$ProjectRoot\scripts\windows\run_emotion_recognition.ps1", "${pipelineDir}\emotions", $videoDir
+    param($projectRoot, $pipelineDir, $videoDir)
+    
+    # Change to project root to access Poetry config
+    Set-Location $projectRoot
+    
+    # Set environment variables in the job
+    $env:HF_HUB_DISABLE_PROGRESS_BARS = "1"
+    $env:TRANSFORMERS_VERBOSITY = "error"
+    $env:TOKENIZERS_PARALLELISM = "false"
+    $env:PYTHONWARNINGS = "ignore"
+    
+    # Install emotion dependencies in a separate isolated environment
+    Write-Host "Installing emotion dependencies..." -ForegroundColor Yellow
+    poetry install --with common --with emotion --no-root
+    
+    # Run emotion recognition with quiet flag
+    $emotionExit = 0
+    try {
+        poetry run python -m src.emotion_recognition.cli --quiet --output-dir "${pipelineDir}\emotions" "${videoDir}"
+        $emotionExit = $LASTEXITCODE
+    } catch {
+        $emotionExit = 1
+    }
+    
+    # Return exit code
+    return $emotionExit
+} -ArgumentList $ProjectRoot, $pipelineDir, $videoDir
 
 # Wait for speech separation to complete
 Write-Host "`nWaiting for speech separation to complete..." -ForegroundColor Yellow
 $speechJob | Wait-Job | Out-Null
 $speechResult = Receive-Job -Job $speechJob
-$speechExit = $speechJob.ChildJobs[0].Output[-1]
+$speechExit = $speechResult.SpeechExit
+$sttExit = $speechResult.SttExit
 Remove-Job -Job $speechJob
 
 Write-Host "`n===== Speech separation completed with status: $speechExit =====" -ForegroundColor $(if ($speechExit -eq 0) {"Green"} else {"Red"})
 
 # Step 3: Speech-to-text (only if speech separation succeeded)
-$sttExit = 1
 if ($speechExit -eq 0) {
-    Write-Host "`n===== Step 3: Speech to Text =====" -ForegroundColor Green
-    & "$ProjectRoot\scripts\windows\run_speech_to_text.ps1" --input-dir "${pipelineDir}\speech" --output-dir "${pipelineDir}\transcripts"
-    $sttExit = $LASTEXITCODE
-    Write-Host "`n===== Speech to text completed with status: $sttExit =====" -ForegroundColor $(if ($sttExit -eq 0) {"Green"} else {"Red"})
+    Write-Host "`n===== Speech to Text completed with status: $sttExit =====" -ForegroundColor $(if ($sttExit -eq 0) {"Green"} else {"Red"})
 } else {
     Write-Host "Speech separation failed. Skipping speech to text step." -ForegroundColor Yellow
 }
@@ -185,7 +264,7 @@ if ($speechExit -eq 0) {
 Write-Host "`nWaiting for emotion recognition to complete..." -ForegroundColor Yellow
 $emotionJob | Wait-Job | Out-Null
 $emotionResult = Receive-Job -Job $emotionJob
-$emotionExit = $emotionJob.ChildJobs[0].Output[-1]
+$emotionExit = $emotionResult
 Remove-Job -Job $emotionJob
 
 Write-Host "`n===== Emotion recognition completed with status: $emotionExit =====" -ForegroundColor $(if ($emotionExit -eq 0) {"Green"} else {"Red"})
