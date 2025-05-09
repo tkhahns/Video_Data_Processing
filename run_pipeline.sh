@@ -27,47 +27,34 @@ fi
 PYTHON_VERSION=$(python3 --version)
 echo "Found $PYTHON_VERSION"
 
-# Check for and create virtual environment if needed - but ONLY in project root
-VENV_PATH="${PROJECT_ROOT}/.venv"
-ALT_VENV_PATH="${PROJECT_ROOT}/venv"
-
-# Always use absolute paths to avoid creating venvs in wrong locations
-if [ -f "${VENV_PATH}/bin/activate" ]; then
-    echo "Found existing virtual environment at ${VENV_PATH}"
-elif [ -f "${ALT_VENV_PATH}/bin/activate" ]; then
-    echo "Found existing virtual environment at ${ALT_VENV_PATH}"
-else
-    echo "No virtual environment found. Creating one at ${VENV_PATH}..."
-    # Change to project root directory before creating the venv
-    pushd "${PROJECT_ROOT}" > /dev/null
-    python3 -m venv .venv
-    popd > /dev/null
+# Check if Poetry is installed, if not install it
+if ! command -v poetry &> /dev/null; then
+    echo "Poetry not found. Installing Poetry..."
+    curl -sSL https://install.python-poetry.org | python3 -
     
-    if [ $? -ne 0 ]; then
-        echo "Failed to create virtual environment. Please check your Python installation."
+    # Add Poetry to the PATH for this session
+    export PATH="$HOME/.local/bin:$PATH"
+    
+    if ! command -v poetry &> /dev/null; then
+        echo "Failed to install Poetry. Please install manually with:"
+        echo "curl -sSL https://install.python-poetry.org | python3 -"
         exit 1
     fi
-    echo "Virtual environment created successfully at ${VENV_PATH}."
 fi
 
-# Activate virtual environment using absolute paths
-if [ -f "${VENV_PATH}/bin/activate" ]; then
-    echo "Activating virtual environment from ${VENV_PATH}..."
-    source "${VENV_PATH}/bin/activate"
-elif [ -f "${ALT_VENV_PATH}/bin/activate" ]; then
-    echo "Activating virtual environment from ${ALT_VENV_PATH}..."
-    source "${ALT_VENV_PATH}/bin/activate"
-fi
+# Configure Poetry to create the virtualenv in the project directory
+echo "Configuring Poetry..."
+poetry config virtualenvs.in-project true
 
-# Install dependencies from requirements.txt using absolute path
-echo "Installing required dependencies..."
-pip install -r "${PROJECT_ROOT}/requirements.txt"
+# Set environment variables to suppress model download output
+export HF_HUB_DISABLE_PROGRESS_BARS=1
+export TRANSFORMERS_VERBOSITY=error
+export TOKENIZERS_PARALLELISM=false
+export PYTHONWARNINGS=ignore
 
-# Make the scripts executable using absolute paths
-chmod +x "${PROJECT_ROOT}/scripts/macos/run_download_videos.sh"
-chmod +x "${PROJECT_ROOT}/scripts/macos/run_separate_speech.sh"
-chmod +x "${PROJECT_ROOT}/scripts/macos/run_speech_to_text.sh"
-chmod +x "${PROJECT_ROOT}/scripts/macos/run_emotion_recognition.sh"
+# Install base dependencies
+echo "Installing common dependencies..."
+poetry install --no-root
 
 # Create and ensure essential directories exist
 DATA_DIR="${PROJECT_ROOT}/data"
@@ -132,8 +119,14 @@ esac
 # Step 1: Download videos (only if selected)
 if [ "$video_choice" -eq 2 ]; then
     echo -e "\n===== Step 1: Download Videos ====="
+    
+    # Install download dependencies
+    echo "Installing download dependencies..."
+    cd "$PROJECT_ROOT"
+    poetry install --only download
+    
     chmod +x "${PROJECT_ROOT}/scripts/macos/run_download_videos.sh"
-    "${PROJECT_ROOT}/scripts/macos/run_download_videos.sh" --output-dir "$VIDEO_DIR" "$@"
+    poetry run "${PROJECT_ROOT}/scripts/macos/run_download_videos.sh" --output-dir "$VIDEO_DIR" "$@"
     DOWNLOAD_EXIT=$?
 
     if [ $DOWNLOAD_EXIT -ne 0 ]; then
@@ -150,36 +143,75 @@ fi
 
 # Step 2a: Speech Separation (in background)
 echo -e "\n===== Step 2a: Speech Separation ====="
-./scripts/macos/run_separate_speech.sh --output-dir "${PIPELINE_DIR}/speech" "$VIDEO_DIR" &
+(
+    # Create subprocess with speech dependencies in an isolated environment
+    echo "Installing speech dependencies..."
+    cd "$PROJECT_ROOT"
+    
+    # Set environment variables in subprocess
+    export HF_HUB_DISABLE_PROGRESS_BARS=1
+    export TRANSFORMERS_VERBOSITY=error
+    export TOKENIZERS_PARALLELISM=false
+    export PYTHONWARNINGS=ignore
+    
+    poetry install --with common --with speech --no-root
+    
+    # Run speech separation with quiet flag
+    poetry run python -m src.separate_speech --quiet --output-dir "${PIPELINE_DIR}/speech" "$VIDEO_DIR"
+    SPEECH_EXIT=$?
+    
+    # If speech separation succeeds, run speech-to-text
+    if [ $SPEECH_EXIT -eq 0 ]; then
+        echo -e "\n===== Step 3: Speech to Text ====="
+        poetry run python -m src.speech_to_text --quiet --input-dir "${PIPELINE_DIR}/speech" --output-dir "${PIPELINE_DIR}/transcripts"
+        STT_EXIT=$?
+        echo -e "\n===== Speech to text completed with status: $STT_EXIT ====="
+    else
+        echo "Speech separation failed. Skipping speech to text step."
+        STT_EXIT=1
+    fi
+    
+    # Save exit codes to files for the parent process to read
+    echo $SPEECH_EXIT > "${PIPELINE_DIR}/.speech_exit"
+    echo $STT_EXIT > "${PIPELINE_DIR}/.stt_exit"
+) &
 SPEECH_PID=$!
 
 # Step 2b: Emotion Recognition (in background)
 echo -e "\n===== Step 2b: Emotion Recognition ====="
-./scripts/macos/run_emotion_recognition.sh --output-dir "${PIPELINE_DIR}/emotions" "$VIDEO_DIR" &
+(
+    # Create subprocess with emotion dependencies in a separate isolated environment
+    echo "Installing emotion recognition dependencies..."
+    cd "$PROJECT_ROOT"
+    
+    # Set environment variables in subprocess
+    export HF_HUB_DISABLE_PROGRESS_BARS=1
+    export TRANSFORMERS_VERBOSITY=error
+    export TOKENIZERS_PARALLELISM=false
+    export PYTHONWARNINGS=ignore
+    
+    poetry install --with common --with emotion --no-root
+    
+    # Run emotion recognition with quiet flag
+    poetry run python -m src.emotion_recognition.cli --quiet --output-dir "${PIPELINE_DIR}/emotions" "$VIDEO_DIR"
+    EMOTION_EXIT=$?
+    
+    # Save exit code to file for the parent process to read
+    echo $EMOTION_EXIT > "${PIPELINE_DIR}/.emotion_exit"
+) &
 EMOTION_PID=$!
 
-# Wait for speech separation to complete
+# Wait for processes to complete
 wait $SPEECH_PID
-SPEECH_EXIT=$?
-
-echo -e "\n===== Speech separation completed with status: $SPEECH_EXIT ====="
-
-# Step 3: Speech-to-text (only if speech separation succeeded)
-if [ $SPEECH_EXIT -eq 0 ]; then
-    echo -e "\n===== Step 3: Speech to Text ====="
-    ./scripts/macos/run_speech_to_text.sh --input-dir "${PIPELINE_DIR}/speech" --output-dir "${PIPELINE_DIR}/transcripts"
-    STT_EXIT=$?
-    echo -e "\n===== Speech to text completed with status: $STT_EXIT ====="
-else
-    echo "Speech separation failed. Skipping speech to text step."
-    STT_EXIT=1
-fi
-
-# Wait for emotion recognition to complete
 wait $EMOTION_PID
-EMOTION_EXIT=$?
 
-echo -e "\n===== Emotion recognition completed with status: $EMOTION_EXIT ====="
+# Read exit codes
+SPEECH_EXIT=$(cat "${PIPELINE_DIR}/.speech_exit")
+STT_EXIT=$(cat "${PIPELINE_DIR}/.stt_exit")
+EMOTION_EXIT=$(cat "${PIPELINE_DIR}/.emotion_exit")
+
+# Clean up temporary files
+rm -f "${PIPELINE_DIR}/.speech_exit" "${PIPELINE_DIR}/.stt_exit" "${PIPELINE_DIR}/.emotion_exit"
 
 # Summarize results
 echo -e "\n=================================="
@@ -202,4 +234,3 @@ else
     echo -e "\nPipeline completed with some errors. Check the logs for details."
     exit 1
 fi
-``
