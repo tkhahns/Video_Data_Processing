@@ -16,13 +16,9 @@
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 
 # Get the project root directory (parent of scripts directory)
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 
-# Activate virtual environment if it exists
-if [ -d "$PROJECT_ROOT/venv" ]; then
-    echo "Activating virtual environment..."
-    source "$PROJECT_ROOT/venv/bin/activate"
-fi
+echo "Project root: $PROJECT_ROOT"
 
 # Check for Python
 if ! command -v python3 &> /dev/null; then
@@ -30,76 +26,37 @@ if ! command -v python3 &> /dev/null; then
     exit 1
 fi
 
-# Install main dependencies individually to avoid conflicts
-echo "Installing dependencies..."
-pip3 install "numpy>=1.25.0" "pandas>=2.1.0"
-pip3 install "matplotlib>=3.7.0"  # Install compatible matplotlib version first
-pip3 install "opencv-python>=4.8.0.76"
-pip3 install "tensorflow>=2.13.0" tf-keras  # Core dependencies for emotion recognition
-
-# Check for main dependencies in requirements.txt first
-echo "Installing dependencies from requirements.txt..."
-# Fix the path to requirements.txt - use current directory
-pip3 install -r requirements.txt
-
-# Check for required DeepFace library
-echo "Checking for DeepFace dependency..."
-if ! python3 -c "import deepface" &> /dev/null; then
-    echo "DeepFace not found. Attempting to install..."
-    pip3 install deepface>=0.0.79
+# Check if Poetry is installed
+if ! command -v poetry &> /dev/null; then
+    echo "Poetry not found. Installing Poetry..."
+    curl -sSL https://install.python-poetry.org | python3 -
     
-    # Verify installation was successful
-    if ! python3 -c "import deepface" &> /dev/null; then
-        echo "Error: Failed to install DeepFace. Please install manually with:"
-        echo "pip install deepface>=0.0.79"
+    # Add Poetry to the PATH for this session
+    export PATH="$HOME/.local/bin:$PATH"
+    
+    if ! command -v poetry &> /dev/null; then
+        echo "Failed to install Poetry. Please install manually with:"
+        echo "curl -sSL https://install.python-poetry.org | python3 -"
         exit 1
     fi
-    echo "DeepFace installed successfully."
+    echo "Poetry installed successfully."
 fi
 
-# Check for TensorFlow version and install tf-keras if needed
-echo "Checking TensorFlow compatibility..."
-TF_VERSION=$(python3 -c "import tensorflow as tf; print(tf.__version__)" 2>/dev/null)
-if [[ $? -eq 0 ]]; then
-    # Compare TensorFlow version
-    MAJOR=$(echo $TF_VERSION | cut -d. -f1)
-    MINOR=$(echo $TF_VERSION | cut -d. -f2)
-    
-    if [[ $MAJOR -eq 2 && $MINOR -ge 13 ]] || [[ $MAJOR -gt 2 ]]; then
-        echo "TensorFlow $TF_VERSION detected, checking for tf-keras..."
-        if ! python3 -c "import tf_keras" &> /dev/null; then
-            echo "Installing tf-keras for TensorFlow compatibility..."
-            pip3 install tf-keras
-            
-            # Verify installation
-            if ! python3 -c "import tf_keras" &> /dev/null; then
-                echo "Warning: Failed to install tf-keras. You may encounter errors."
-            else
-                echo "tf-keras installed successfully."
-            fi
-        else
-            echo "tf-keras is already installed."
-        fi
-    fi
-else
-    echo "TensorFlow not detected, will attempt to install dependencies as needed."
-fi
+# Navigate to project root
+cd "$PROJECT_ROOT" || exit 1
 
-# Check for MediaPipe (for body pose estimation)
-echo "Checking for MediaPipe dependency..."
-if ! python3 -c "import mediapipe" &> /dev/null; then
-    echo "MediaPipe not found. Attempting to install..."
-    pip3 install mediapipe
-    
-    # Verify installation was successful
-    if ! python3 -c "import mediapipe" &> /dev/null; then
-        echo "Warning: Failed to install MediaPipe. Body pose estimation may not work properly."
-    else
-        echo "MediaPipe installed successfully."
-    fi
-else
-    echo "MediaPipe is already installed."
-fi
+# Configure poetry for in-project virtualenv
+poetry config virtualenvs.in-project true
+
+# Set environment variables to suppress model download output
+export HF_HUB_DISABLE_PROGRESS_BARS=1
+export TRANSFORMERS_VERBOSITY=error
+export TOKENIZERS_PARALLELISM=false
+export PYTHONWARNINGS=ignore
+
+# Install dependencies using Poetry with the emotion group
+echo "Installing dependencies with Poetry..."
+poetry install --with common --with emotion --no-root
 
 # Make sure the default directories exist
 DATA_DIR="${PROJECT_ROOT}/data/videos"
@@ -115,28 +72,34 @@ if [ ! -d "$OUTPUT_DIR" ]; then
     mkdir -p "$OUTPUT_DIR"
 fi
 
-# Add the project root to PYTHONPATH to allow imports
-export PYTHONPATH="$PROJECT_ROOT:$PYTHONPATH"
-
 # Run the emotion recognition module with all arguments passed to this script
 echo "Running Emotion Recognition module with body pose estimation enabled by default..."
 
-# Check if --no-pose is already in the arguments
+# Check if --quiet or -q is already in the arguments
+QUIET_PRESENT=false
 NO_POSE_PRESENT=false
+
 for arg in "$@"; do
+  if [ "$arg" == "--quiet" ] || [ "$arg" == "-q" ]; then
+    QUIET_PRESENT=true
+  fi
   if [ "$arg" == "--no-pose" ]; then
     NO_POSE_PRESENT=true
-    break
   fi
 done
 
-if [ "$NO_POSE_PRESENT" = true ]; then
-    # If --no-pose is already in the arguments, don't add --with-pose
-    python3 -m src.emotion_recognition.cli "$@"
-else
-    # Add --with-pose to arguments (it's now the default)
-    python3 -m src.emotion_recognition.cli --with-pose "$@"
+# Prepare arguments
+cmd_args=()
+if [ "$NO_POSE_PRESENT" != "true" ]; then
+  cmd_args+=("--with-pose")
 fi
+if [ "$QUIET_PRESENT" != "true" ]; then
+  cmd_args+=("--quiet")  # Add quiet flag by default
+fi
+cmd_args+=("$@")  # Add all original arguments
+
+# Run with prepared arguments
+poetry run python -m src.emotion_recognition.cli "${cmd_args[@]}"
 
 # Exit with the same code as the python command
 exit $?
