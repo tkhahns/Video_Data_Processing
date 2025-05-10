@@ -185,20 +185,20 @@ $speechJob = Start-Job -ScriptBlock {
     Write-Host "Installing speech dependencies..." -ForegroundColor Yellow
     poetry install --with common --with speech --no-root
     
-    # Run speech separation with quiet flag
+    # Run speech separation (remove quiet flag)
     $speechExit = 0
     try {
-        poetry run python -m src.separate_speech --quiet --output-dir "${pipelineDir}\speech" "${videoDir}"
+        poetry run python -m src.separate_speech --output-dir "${pipelineDir}\speech" "${videoDir}"
         $speechExit = $LASTEXITCODE
     } catch {
         $speechExit = 1
     }
     
-    # If speech separation succeeded, run speech-to-text
+    # If speech separation succeeded, run speech-to-text (remove quiet flag)
     $sttExit = 1
     if ($speechExit -eq 0) {
         try {
-            poetry run python -m src.speech_to_text --quiet --input-dir "${pipelineDir}\speech" --output-dir "${pipelineDir}\transcripts"
+            poetry run python -m src.speech_to_text --input-dir "${pipelineDir}\speech" --output-dir "${pipelineDir}\transcripts"
             $sttExit = $LASTEXITCODE
         } catch {
             $sttExit = 1
@@ -230,10 +230,10 @@ $emotionJob = Start-Job -ScriptBlock {
     Write-Host "Installing emotion dependencies..." -ForegroundColor Yellow
     poetry install --with common --with emotion --no-root
     
-    # Run emotion recognition with quiet flag
+    # Run emotion recognition (remove quiet flag)
     $emotionExit = 0
     try {
-        poetry run python -m src.emotion_recognition.cli --quiet --output-dir "${pipelineDir}\emotions" "${videoDir}"
+        poetry run python -m src.emotion_recognition.cli --output-dir "${pipelineDir}\emotions" "${videoDir}"
         $emotionExit = $LASTEXITCODE
     } catch {
         $emotionExit = 1
