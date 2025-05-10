@@ -56,7 +56,10 @@ export PYTHONWARNINGS=ignore
 
 # Install dependencies using Poetry with the emotion group
 echo "Installing dependencies with Poetry..."
-poetry install --with common --with emotion --no-root
+if ! poetry install --with common --with emotion --no-root; then
+    echo "First poetry install attempt failed, retrying once..."
+    poetry install --with common --with emotion --no-root
+fi
 
 # Make sure the default directories exist
 DATA_DIR="${PROJECT_ROOT}/data/videos"
@@ -75,31 +78,54 @@ fi
 # Run the emotion recognition module with all arguments passed to this script
 echo "Running Emotion Recognition module with body pose estimation enabled by default..."
 
-# Check if --quiet or -q is already in the arguments
-QUIET_PRESENT=false
+# Check if --no-pose is already in the arguments
 NO_POSE_PRESENT=false
-
 for arg in "$@"; do
-  if [ "$arg" == "--quiet" ] || [ "$arg" == "-q" ]; then
-    QUIET_PRESENT=true
-  fi
   if [ "$arg" == "--no-pose" ]; then
     NO_POSE_PRESENT=true
+    break
   fi
 done
 
-# Prepare arguments
-cmd_args=()
-if [ "$NO_POSE_PRESENT" != "true" ]; then
-  cmd_args+=("--with-pose")
-fi
-if [ "$QUIET_PRESENT" != "true" ]; then
-  cmd_args+=("--quiet")  # Add quiet flag by default
-fi
-cmd_args+=("$@")  # Add all original arguments
+# Function to run the emotion recognition module
+run_emotion_recognition() {
+    local args=("$@")
+    
+    # Check if the first argument is one of the valid commands
+    # If not, default to "interactive" mode
+    local valid_commands=("process" "batch" "check" "interactive")
+    local is_valid_command=false
+    
+    if [ ${#args[@]} -gt 0 ]; then
+        for cmd in "${valid_commands[@]}"; do
+            if [ "${args[0]}" = "$cmd" ]; then
+                is_valid_command=true
+                break
+            fi
+        done
+    fi
+    
+    # If no valid command is provided, use interactive mode
+    if [ "$is_valid_command" = false ]; then
+        args=("interactive" "${args[@]}")
+    fi
+    
+    # Redirect stderr to capture potential warnings we want to hide
+    if [ "$NO_POSE_PRESENT" = true ]; then
+        # If --no-pose is already in the arguments, don't add --with-pose
+        poetry run python -m src.emotion_recognition.cli "${args[@]}" 2> >(grep -v "WARNING\|importing the numpy" >&2)
+    else
+        # Add --with-pose to arguments (it's now the default)
+        poetry run python -m src.emotion_recognition.cli --with-pose "${args[@]}" 2> >(grep -v "WARNING\|importing the numpy" >&2)
+    fi
+    return $?
+}
 
-# Run with prepared arguments
-poetry run python -m src.emotion_recognition.cli "${cmd_args[@]}"
+# Run with error handling
+if ! run_emotion_recognition "$@"; then
+    echo "Error running emotion recognition module, exit code: $?"
+    exit 1
+fi
 
-# Exit with the same code as the python command
-exit $?
+# Exit with success
+exit 0
