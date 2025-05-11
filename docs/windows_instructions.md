@@ -1,4 +1,4 @@
-## Video Data Processing Setup Instructions
+# Video Data Processing - Windows Setup Instructions
 
 These instructions will help you set up the environment for the Video Data Processing application on Windows.
 
@@ -6,14 +6,55 @@ These instructions will help you set up the environment for the Video Data Proce
 
 ## Prerequisites
 
-Ensure you have **Python 3.12.10** installed on your system:
+### Python 3.12 (Required)
 
-```bash
-# Download and install Python 3.12.10 from the official Python website
-# https://www.python.org/downloads/release/python-31210/
+This project requires Python 3.12 specifically:
 
-# Verify the Python version (in Command Prompt or PowerShell)
-python --version    # → Python 3.12.10
+```powershell
+# Check Python version
+python --version
+
+# Install Python 3.12 from the official website
+# https://www.python.org/downloads/windows/
+
+# Ensure Python is added to PATH during installation
+
+# Verify Python version
+python --version  # Should show Python 3.12.x
+```
+
+### Poetry for Dependency Management
+
+This project uses Poetry for dependency management:
+
+```powershell
+# Install Poetry
+(Invoke-WebRequest -Uri https://install.python-poetry.org -UseBasicParsing).Content | python -
+
+# Add Poetry to your PATH
+# Poetry is typically installed to %APPDATA%\Python\Scripts
+# You may need to add this directory to your PATH
+
+# Verify Poetry installation
+poetry --version
+
+# Configure Poetry to use Python 3.12
+poetry env use python3.12
+```
+
+### FFmpeg
+
+FFmpeg is required for audio and video processing:
+
+```powershell
+# Install using Chocolatey (recommended)
+choco install ffmpeg
+
+# Or download from official website
+# https://ffmpeg.org/download.html
+
+# Verify installation
+ffmpeg -version
 ```
 
 ---
@@ -22,425 +63,184 @@ python --version    # → Python 3.12.10
 
 ### 1. Clone the repository
 
-```bash
+```powershell
 git clone https://github.com/tkhahns/Video_Data_Processing.git
 cd Video_Data_Processing
 ```
 
-### 2. Create and activate a virtual environment
+### 2. Install dependencies with Poetry
 
-```bash
-# Create the virtual environment
-python -m venv .venv
+```powershell
+# Configure Poetry to use Python 3.12 for this project
+poetry env use python3.12
 
-# Activate the virtual environment
-.venv\Scripts\activate
-```
+# Install main dependencies
+poetry install
 
-### 3. Update pip and install dependencies
-
-```bash
-# Update pip to the latest version
-python -m pip install --upgrade pip
-
-# Install project dependencies
-pip install -r requirements.txt
-
-# Install huggingface-hub
-pip install huggingface-hub
+# Install all feature groups
+poetry install --with common
+poetry install --with speech
+poetry install --with emotion
+poetry install --with download
 ```
 
 ---
 
-## Install ffmpeg
+## Complete Processing Pipeline
 
-ffmpeg is required for audio processing and conversion. There are two ways to install it:
+The `run_all.ps1` script provides a complete end-to-end pipeline that:
+1. Downloads videos from SharePoint
+2. Extracts speech from the videos
+3. Transcribes the speech to text
+4. Analyzes emotions and body poses in the videos
 
-### Option 1: Using Chocolatey (recommended if you have Chocolatey installed)
+All outputs are organized in timestamped directories for easy tracking.
 
-```bash
-# Install Chocolatey first if you don't have it
-# Run this in an administrator PowerShell
-# Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+### Running the Complete Pipeline
 
-# Then install ffmpeg
-choco install ffmpeg
+```powershell
+# Run the pipeline (will prompt for SharePoint URL)
+.\run_all.ps1
+
+# Or specify the SharePoint URL directly
+.\run_all.ps1 --url "https://your-sharepoint-site.com/folder-with-videos"
 ```
 
-### Option 2: Manual installation
+### Pipeline Outputs
 
-1. Download the latest static build from [ffmpeg.org](https://ffmpeg.org/download.html#build-windows)
-2. Extract the ZIP file to a folder (e.g., `C:\ffmpeg`)
-3. Add ffmpeg to your PATH:
-   - Search for "Environment Variables" in Windows search
-   - Click "Edit the system environment variables"
-   - Click "Environment Variables"
-   - Under "System variables", find "Path" and click "Edit"
-   - Click "New" and add the path to the bin folder (e.g., `C:\ffmpeg\bin`)
-   - Click OK on all windows
-
-### Option 3: Install Python wrapper only
-
-You can also install just the Python wrapper, which will try to use ffmpeg if it's available:
-
-```bash
-pip install ffmpeg-python pydub
-```
-
-To verify ffmpeg is installed correctly:
-
-```bash
-ffmpeg -version
-```
+The pipeline creates the following directory structure:
+- `data\downloads_TIMESTAMP\`: Original downloaded videos
+- `output\pipeline_results_TIMESTAMP\`: Processing results
+  - `speech\`: Extracted speech audio files
+  - `transcripts\`: Text transcription files
+  - `emotions_and_pose\`: Emotion and body pose analysis
 
 ---
 
-## Fetch all models
+## Individual Components
 
-You can download the required models using either of these methods:
+Each component can also be run separately if you need to process only specific steps.
 
-### Option 1: Using the automated script (recommended)
+### 1. Download Videos from SharePoint
 
-```bash
-# Open PowerShell and navigate to the project directory
-# You may need to set execution policy first
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+```powershell
+# Run with Poetry (interactive mode)
+poetry run .\scripts\windows\run_download_videos.ps1
 
-# Run the script
-.\run_download_models.ps1
-```
-
-This script automatically:
-- Creates and activates the virtual environment
-- Updates pip and installs dependencies
-- Creates the models directory
-- Downloads all required models
-
-### Option 2: Running as a module
-
-```bash
-# With virtual environment activated
-python -m src.download_models
-```
-
-### Option 3: Additional options
-
-```bash
-# Download only specific model types
-python -m src.download_models --model-types audio video
-
-# Force re-download of existing models
-python -m src.download_models --force
-
-# Preview what would be downloaded without downloading
-python -m src.download_models --dry-run
-```
-
----
-
-## Complete Video Processing Pipeline
-
-You can run the complete video processing pipeline using a single script. This will perform all processing steps in sequence:
-
-1. Download videos from SharePoint
-2. Process videos in parallel:
-   - Speech separation followed by speech-to-text
-   - Emotion and body pose recognition
-
-### Running the complete pipeline
-
-```bash
-# Run the pipeline with default settings
-.\run_pipeline.ps1
-
-# Or specify SharePoint URL to download videos from
-.\run_pipeline.ps1 --url "https://your-sharepoint-site.com/folder-with-videos"
-```
-
-This will:
-1. Create a timestamped directory for all processing results
-2. Download videos (or use existing ones if download fails)
-3. Process speech separation in parallel with emotion recognition
-4. Run speech-to-text on the separated speech
-5. Provide a summary of results when complete
-
-All component scripts are located in the `scripts\windows\` directory and can also be run individually:
-
-```bash
-# Individual scripts
-.\scripts\windows\run_download_videos.ps1
-.\scripts\windows\run_separate_speech.ps1
-.\scripts\windows\run_speech_to_text.ps1
-.\scripts\windows\run_emotion_recognition.ps1
-```
-
----
-
-## Download Videos from SharePoint
-
-You can download videos from SharePoint using the included browser automation tool:
-
-### Option 1: Using the convenience script (recommended)
-
-```bash
-# Run the script with no arguments (you'll be prompted for the URL)
-.\scripts\windows\run_download_videos.ps1
-
-# Or specify the URL directly
-.\scripts\windows\run_download_videos.ps1 --url "https://your-sharepoint-site.com/folder-with-videos"
-
-# Additional options:
-.\scripts\windows\run_download_videos.ps1 --url "https://your-sharepoint-site.com/folder-with-videos" --output-dir "./my-videos"
-.\scripts\windows\run_download_videos.ps1 --list-only
-.\scripts\windows\run_download_videos.ps1 --debug
-```
-
-This script automatically:
-- Activates the virtual environment
-- Prompts for SharePoint URL if not provided
-- Handles errors gracefully
-
-### Option 2: Running as a module
-
-```bash
-# Using Python module syntax
-python -m src.download_videos --url "https://your-sharepoint-site.com/folder-with-videos"
-
-# Shorthand version
-python src/download_videos --url "https://your-sharepoint-site.com/folder-with-videos"
+# Specify URL directly
+poetry run .\scripts\windows\run_download_videos.ps1 --url "https://your-sharepoint-site.com/folder-with-videos"
 
 # Additional options
-python src/download_videos --url "https://your-sharepoint-site.com/folder-with-videos" --output-dir "./my-videos"
-python src/download_videos --list-only --url "https://your-sharepoint-site.com/folder-with-videos"
-python src/download_videos --debug --url "https://your-sharepoint-site.com/folder-with-videos"
+poetry run .\scripts\windows\run_download_videos.ps1 --url "URL" --output-dir ".\my-videos"
+poetry run .\scripts\windows\run_download_videos.ps1 --list-only
+poetry run .\scripts\windows\run_download_videos.ps1 --debug
 ```
 
-### Option 3: Running the Python script directly
+### 2. Extract Speech from Videos
 
-```bash
-# Basic usage
-python src/download_videos/main.py --url "https://your-sharepoint-site.com/folder-with-videos"
+```powershell
+# Interactive mode
+poetry run .\scripts\windows\run_separate_speech.ps1
 
-# Save to a specific directory
-python src/download_videos/main.py --url "https://your-sharepoint-site.com/folder-with-videos" --output-dir "./my-videos"
+# With specific input and output directories
+poetry run .\scripts\windows\run_separate_speech.ps1 --input-dir ".\my-videos" --output-dir ".\my-speech"
 
-# Just list files without downloading
-python src/download_videos/main.py --url "https://your-sharepoint-site.com/folder-with-videos" --list-only
-
-# Enable debug mode for troubleshooting
-python src/download_videos/main.py --url "https://your-sharepoint-site.com/folder-with-videos" --debug
+# Additional options
+poetry run .\scripts\windows\run_separate_speech.ps1 --file-type wav  # Output format: wav, mp3, or both
+poetry run .\scripts\windows\run_separate_speech.ps1 --model sepformer  # Separation model
 ```
 
-**Note:** The tool requires authentication to SharePoint. You'll need to sign in through the browser window that opens.
+### 3. Transcribe Speech to Text
+
+```powershell
+# Interactive mode
+poetry run .\scripts\windows\run_speech_to_text.ps1
+
+# With specific input and output directories
+poetry run .\scripts\windows\run_speech_to_text.ps1 --input-dir ".\my-speech" --output-dir ".\my-transcripts"
+
+# Additional options
+poetry run .\scripts\windows\run_speech_to_text.ps1 --language fr  # Language (default: en)
+poetry run .\scripts\windows\run_speech_to_text.ps1 --output-format txt  # Output format: srt, txt, or both
+poetry run .\scripts\windows\run_speech_to_text.ps1 --model whisperx  # Transcription model
+```
+
+### 4. Analyze Emotions and Body Poses
+
+```powershell
+# Interactive mode
+poetry run .\scripts\windows\run_emotion_recognition.ps1
+
+# With specific input and output directories
+poetry run .\scripts\windows\run_emotion_recognition.ps1 --input-dir ".\my-videos" --output-dir ".\my-emotions"
+
+# Emotion recognition always includes pose estimation by default
+# To disable pose estimation (not recommended)
+poetry run .\scripts\windows\run_emotion_recognition.ps1 --no-pose
+```
 
 ---
 
-## Extract Speech from Videos
+## Advanced Usage
 
-You can extract and separate speech from video files using the provided speech separation tool:
+### Running as Python Modules
 
-### Option 1: Using the convenience script (recommended)
+Each component can be run directly as a Python module:
 
-```bash
-# Run the script with no arguments (interactive mode)
-.\scripts\windows\run_separate_speech.ps1
+```powershell
+# Download videos
+poetry run python -m src.download_videos --url "https://sharepoint-url.com" --output-dir ".\my-videos"
 
-# Or process specific video files
-.\scripts\windows\run_separate_speech.ps1 path\to\video.mp4
+# Speech separation
+poetry run python -m src.separate_speech --input-dir ".\my-videos" --output-dir ".\my-speech"
 
-# Additional options:
-.\scripts\windows\run_separate_speech.ps1 --output-dir "./my-speech-output" path\to\video.mp4
-.\scripts\windows\run_separate_speech.ps1 --file-type wav  # Choose output format: wav, mp3, or both
-.\scripts\windows\run_separate_speech.ps1 --model sepformer
-.\scripts\windows\run_separate_speech.ps1 --detect-dialogues  # Enable dialogue detection
+# Speech to text
+poetry run python -m src.speech_to_text --input-dir ".\my-speech" --output-dir ".\my-transcripts"
+
+# Emotion recognition
+poetry run python -m src.emotion_recognition.cli --input-dir ".\my-videos" --output-dir ".\my-emotions" --with-pose
 ```
 
-This script automatically:
-- Activates the virtual environment
-- Handles dependencies
-- Processes videos through the speech separation model
+### Troubleshooting
 
-### Option 2: Running as a module
+#### PowerShell Execution Policy
 
-```bash
-# Using Python module syntax (interactive mode)
-python -m src.separate_speech --interactive
+If you get an error related to script execution policy:
 
-# Process specific video files
-python -m src.separate_speech path\to\video.mp4
-
-# Additional options
-python -m src.separate_speech path\to\video.mp4 --output-dir "./my-speech-output"
-python -m src.separate_speech path\to\video.mp4 --file-type wav
-python -m src.separate_speech path\to\video.mp4 --detect-dialogues  # Enable dialogue detection
-python -m src.separate_speech path\to\video.mp4 --skip-no-speech  # Skip files without speech
+```powershell
+# Run PowerShell as Administrator and execute
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
 
-### Option 3: Running the Python script directly
+#### Missing Dependencies
 
-```bash
-# Basic usage
-python src/separate_speech/__main__.py path\to\video.mp4
+If you encounter missing dependency errors:
 
-# Advanced options
-python src/separate_speech/__main__.py --output-dir "./my-speech-output" --file-type both path\to\video.mp4
-python src/separate_speech/__main__.py --model sepformer --chunk-size 5 path\to\video.mp4
-python src/separate_speech/__main__.py --detect-dialogues path\to\video.mp4  # Enable dialogue detection
+```powershell
+# Update Poetry dependencies
+poetry update
+
+# Ensure all feature groups are installed
+poetry install --with common --with speech --with emotion --with download
 ```
 
-The tool will:
-1. Extract audio from the video files
-2. Process through speech separation model
-3. Save the isolated speech as audio files (WAV and/or MP3)
-4. Optionally detect and extract dialogues from different speakers (with --detect-dialogues)
+#### Path Issues
 
-**Note:** 
-- The first run will download the speech separation model (approximately 1GB), which may take some time depending on your internet connection.
-- For dialogue detection, SpeechBrain will be installed automatically. This feature identifies different speakers and saves their speech as separate audio files.
+Windows paths use backslashes (`\`), but many Python libraries also accept forward slashes (`/`). If you encounter path issues:
 
-### Dialogue Detection Prerequisites
+```powershell
+# Always use double backslashes in PowerShell strings
+$path = "C:\\Users\\username\\Documents"
 
-To use dialogue detection, you need:
-
-```bash
-# Install SpeechBrain and associated dependencies
-pip install speechbrain scikit-learn
+# Or use raw strings with single backslashes
+$path = 'C:\Users\username\Documents'
 ```
-
-If you encounter issues with dialogue detection:
-- Ensure the output directory has write permissions
-- For troubleshooting specific errors, check the log output
 
 ---
 
-## Transcribe Speech to Text
+## Additional Resources
 
-You can transcribe speech audio files to text using the provided speech-to-text transcription tool:
-
-### Option 1: Using the convenience script (recommended)
-
-```bash
-# Run the script with no arguments (interactive mode)
-.\scripts\windows\run_speech_to_text.ps1
-
-# Or process specific audio files
-.\scripts\windows\run_speech_to_text.ps1 path\to\audio.wav
-
-# Additional options:
-.\scripts\windows\run_speech_to_text.ps1 --output-dir "./my-transcripts" path\to\audio.mp3
-.\scripts\windows\run_speech_to_text.ps1 --language fr  # Specify language (default: en)
-.\scripts\windows\run_speech_to_text.ps1 --model whisperx  # Choose model (whisperx, xlsr)
-.\scripts\windows\run_speech_to_text.ps1 --select  # Force file selection even with files specified
-```
-
-This script automatically:
-- Activates the virtual environment
-- Installs required dependencies
-- Processes audio files through the speech-to-text model
-
-When run in interactive mode, the tool will:
-1. Display a list of available audio files
-2. Allow you to select specific files by number (e.g., "1,3,5") or choose "all"
-3. Prompt you to choose an output format (SRT subtitles, TXT with timestamps, or both)
-4. Process the selected files with the chosen settings
-
-### Option 2: Running as a module
-
-```bash
-# Using Python module syntax (interactive mode)
-python -m src.speech_to_text --interactive
-
-# Process specific audio files
-python -m src.speech_to_text path\to\audio.mp3
-
-# Additional options
-python -m src.speech_to_text path\to\audio.wav --output-dir "./my-transcripts"
-python -m src.speech_to_text path\to\audio.mp3 --language es
-python -m src.speech_to_text --output-format txt  # Options: srt, txt, both
-```
-
-### Option 3: Running the Python script directly
-
-```bash
-# Basic usage
-python src/speech_to_text/__main__.py path\to\audio.mp3
-
-# Advanced options
-python src/speech_to_text/__main__.py --output-dir "./my-transcripts" --language fr path\to\audio.mp3
-python src/speech_to_text/__main__.py --model xlsr --recursive path\to\audio\folder
-python src/speech_to_text/__main__.py --output-format both  # Save as both SRT and TXT
-```
-
-The tool will:
-1. Process the audio files through the selected speech recognition model
-2. Create timestamped transcriptions of the spoken content
-3. Save the results as SRT subtitles (.srt), plain text with timestamps (.txt), or both formats
-
-**Note:** The first run will download the speech recognition model, which may take some time depending on your internet connection. If using a CPU-only system, the tool will automatically fall back to float32 precision for better compatibility.
-
----
-
-## Detect Emotions and Body Poses in Videos
-
-You can detect and analyze facial emotions and body poses in videos using the provided emotion recognition tool:
-
-### Option 1: Using the convenience script (recommended)
-
-```bash
-# Run the script with no arguments (interactive mode)
-.\scripts\windows\run_emotion_recognition.ps1
-
-# Or process specific video files
-.\scripts\windows\run_emotion_recognition.ps1 process path\to\video.mp4
-
-# Additional options:
-.\scripts\windows\run_emotion_recognition.ps1 process path\to\video.mp4 --output path\to\output.mp4
-.\scripts\windows\run_emotion_recognition.ps1 batch input\directory output\directory
-.\scripts\windows\run_emotion_recognition.ps1 interactive --input_dir path\to\videos
-.\scripts\windows\run_emotion_recognition.ps1 check
-.\scripts\windows\run_emotion_recognition.ps1 --no-pose  # Disable body pose estimation
-```
-
-This script automatically:
-- Activates the virtual environment
-- Installs required dependencies (DeepFace, TensorFlow, MediaPipe, etc.)
-- Creates the default directories if they don't exist
-- Processes videos through the emotion recognition and pose estimation models
-
-When run in interactive mode, the tool will:
-1. Display a list of available video files (showing only filenames for clarity)
-2. Allow you to select specific files by number (e.g., "1,3,5") or choose "all"
-3. Prompt you to choose an output format (annotated video + log, or log only)
-4. Process the selected files with the chosen settings
-
-### Option 2: Running as a module
-
-```bash
-# Using Python module syntax (interactive mode)
-python -m src.emotion_recognition.cli
-
-# Process a single video file
-python -m src.emotion_recognition.cli process path\to\video.mp4
-
-# Disable body pose estimation
-python -m src.emotion_recognition.cli --no-pose process path\to\video.mp4
-
-# Additional options
-python -m src.emotion_recognition.cli process path\to\video.mp4 --output path\to\output.mp4
-python -m src.emotion_recognition.cli batch input\directory output\directory
-python -m src.emotion_recognition.cli check
-```
-
-The tool will:
-1. Detect faces in each frame of the video
-2. Analyze emotions (happy, sad, angry, etc.) for each detected face
-3. Detect and track body poses using MediaPipe
-4. Generate an annotated video with emotion labels and pose landmarks
-5. Create a CSV log file with emotion and pose details by timestamp
-6. Create a JSON file with detailed pose data including joint positions and angles
-
-**Note:** 
-- Default input directory: `data\videos\`
-- Default output directory: `output\emotions\`
-- Body pose estimation is enabled by default and can be disabled with the `--no-pose` flag
-- The tool uses DeepFace for emotion recognition and MediaPipe for pose estimation
+- [Project Documentation](https://github.com/username/Video_Data_Processing/docs)
+- [Poetry Documentation](https://python-poetry.org/docs/)
+- [FFmpeg Documentation](https://ffmpeg.org/documentation.html)
+- [Speech Processing Resources](https://github.com/speechbrain/speechbrain)
