@@ -61,6 +61,7 @@ optional = true
 [tool.poetry.group.download.dependencies]
 msal = ">=1.22.0"
 selenium = ">=4.9.0"
+webdriver-manager = ">=3.8.6"  # Added for automatic ChromeDriver management
 
 [build-system]
 requires = ["poetry-core"]
