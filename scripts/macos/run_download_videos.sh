@@ -6,8 +6,12 @@ set -e
 echo "=== Video Data Processing SharePoint Downloader ==="
 echo "This script simplifies downloading videos from SharePoint."
 
-# Change to the script's directory
-cd "$(dirname "$0")"
+# Get the script's directory and project root
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
+
+# Change to project root (instead of script directory)
+cd "$PROJECT_ROOT"
 
 # Check if virtual environment exists
 if [ ! -d ".venv" ]; then
