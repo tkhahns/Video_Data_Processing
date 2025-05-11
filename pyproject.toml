@@ -7,7 +7,7 @@ readme = "README.md"
 packages = [{include = "src"}]  # Specify the source directory
 
 [tool.poetry.dependencies]
-python = ">=3.10"
+python = "~3.12"  # Specifically use Python 3.12.x
 requests = ">=2.28.1"
 typer = ">=0.9.0"
 colorama = ">=0.4.6"
