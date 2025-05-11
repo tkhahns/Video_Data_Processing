@@ -26,139 +26,164 @@ logger = init_logging.get_logger(__name__)
 
 # Define common video file extensions
 VIDEO_EXTENSIONS = ['.MP4', '.MOV', '.AVI', '.WMV', '.MKV', '.M4V', '.WEBM', '.FLV', '.3GP']
+# Common file patterns for videos (like MVI_xxxx)
+VIDEO_PATTERNS = ['MVI_', 'IMG_', 'VIDEO_', 'MOV', 'VID_', 'CLIP_']
+
+def take_screenshot(browser, filename="sharepoint_page.png"):
+    """Take a screenshot to help with debugging"""
+    try:
+        screenshot_path = os.path.abspath(filename)
+        browser.save_screenshot(screenshot_path)
+        logger.info(f"Screenshot saved to {screenshot_path}")
+        print(f"Screenshot saved to {screenshot_path} for troubleshooting")
+    except Exception as e:
+        logger.error(f"Failed to take screenshot: {e}")
 
 def find_all_files(browser):
     """Find all files in the current SharePoint page using classic view selectors."""
     try:
         # Wait for the page to fully load
         logger.info("Waiting for SharePoint page to fully load...")
-        time.sleep(3)  # Give the page some time to initialize
+        time.sleep(5)  # Give the page more time to initialize
         
-        try:
-            # Try to wait for a more specific element to ensure page is loaded
-            WebDriverWait(browser, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "div.ms-List-cell, a.ms-listlink, div.ms-vb"))
-            )
-            logger.info("SharePoint page elements detected")
-        except TimeoutException:
-            logger.warning("Timed out waiting for specific elements - continuing with basic detection")
+        # # Take a screenshot for debugging
+        # take_screenshot(browser)
         
-        # Try classic SharePoint view selectors first (based on the HTML sample)
-        logger.info("Looking for files in classic SharePoint view...")
+        # Try multiple methods to find files
+        file_items = []
         
-        # Method 1: Look for ms-listlink class (direct links to files)
-        file_items = browser.find_elements(By.CSS_SELECTOR, "a.ms-listlink")
-        if file_items:
-            logger.info(f"Found {len(file_items)} files with ms-listlink selector")
-        else:
-            # Method 2: Try looking for the container divs
-            logger.info("Looking for file containers with ms-vb class...")
-            container_items = browser.find_elements(By.CSS_SELECTOR, "div.ms-vb")
+        # Method 1: Modern SharePoint view with heroTextWithHeroCommandsWrapped class
+        logger.info("Looking for files in modern SharePoint hero view...")
+        hero_elements = browser.find_elements(By.CLASS_NAME, "heroTextWithHeroCommandsWrapped_cbea99d3")
+        
+        if hero_elements:
+            logger.info(f"Found {len(hero_elements)} files using hero text elements")
+            file_items = hero_elements
+        
+        # If no files found, try other methods from the existing implementation
+        if not file_items:
+            # Try classic SharePoint view selectors first (based on the HTML sample)
+            logger.info("Looking for files in classic SharePoint view...")
             
-            if container_items:
-                logger.info(f"Found {len(container_items)} containers, checking for file links inside...")
-                file_items = []
-                for container in container_items:
-                    try:
-                        link = container.find_element(By.TAG_NAME, "a")
-                        if link:
-                            file_items.append(link)
-                    except:
-                        pass
-                logger.info(f"Extracted {len(file_items)} file links from containers")
-            else:
-                # Method 3: Try modern SharePoint view selectors
-                logger.info("Trying modern SharePoint view selectors...")
-                file_items = browser.find_elements(By.CSS_SELECTOR, "div.ms-List-cell a[role='link']")
+            # Method 2: Look for ms-listlink class (direct links to files)
+            file_items = browser.find_elements(By.CSS_SELECTOR, "a.ms-listlink")
+            if file_items:
+                logger.info(f"Found {len(file_items)} files with ms-listlink selector")
+            
+        # Try more methods if needed
+        if not file_items:
+            logger.info("Trying modern SharePoint view selectors...")
+            file_items = browser.find_elements(By.CSS_SELECTOR, "div.ms-List-cell a[role='link']")
+            if file_items:
+                logger.info(f"Found {len(file_items)} files with modern SharePoint selector")
                 
-                if not file_items:
-                    # Method 4: Try any links with video extensions
-                    logger.info("Trying to find any links with video extensions...")
-                    all_links = browser.find_elements(By.TAG_NAME, "a")
-                    file_items = [link for link in all_links if 
-                                 any(ext in (link.get_attribute("href") or "").upper() for ext in VIDEO_EXTENSIONS) or
-                                 any(ext in (link.get_attribute("aria-label") or "").upper() for ext in 
-                                    [ext.strip('.') for ext in VIDEO_EXTENSIONS])]
-                    logger.info(f"Found {len(file_items)} links that appear to be video files")
+        # Add other fallback methods
+        if not file_items:
+            logger.info("Trying to find any links with video extensions or patterns...")
+            all_links = browser.find_elements(By.TAG_NAME, "a")
+            file_items = [link for link in all_links if 
+                        any(ext.lower() in (link.get_attribute("href") or "").lower() for ext in [e.lower() for e in VIDEO_EXTENSIONS]) or
+                        any(pattern in (link.get_attribute("href") or "").upper() for pattern in VIDEO_PATTERNS)]
+            logger.info(f"Found {len(file_items)} links that appear to be video files by extension/pattern")
         
         file_list = []
+        file_index = 1
         
-        # Process each file link found
+        # Process each file item found
         for index, item in enumerate(file_items):
             try:
-                # Get the href to check if it's a file
-                href = item.get_attribute("href") or ""
+                # Extract different attributes depending on the item type
+                file_name = None
+                file_size = "Unknown size"
+                is_link = item.tag_name.lower() == "a"
                 
-                # Skip if it doesn't look like a file link
-                if not href or not "/" in href:
-                    continue
-                
-                # Get file name from aria-label first (it's more complete with extension)
-                aria_label = item.get_attribute("aria-label") or ""
-                if aria_label and "File" in aria_label:
-                    # Format typically: "FILENAME, mp4 File"
-                    file_name = aria_label.split(",")[0].strip()
-                    # Check if we need to add the extension
-                    if not any(file_name.upper().endswith(ext) for ext in VIDEO_EXTENSIONS):
-                        # Try to extract extension from aria-label
-                        for ext in VIDEO_EXTENSIONS:
-                            ext_name = ext.strip('.').lower()
-                            if ext_name in aria_label.lower():
-                                file_name += ext.lower()
-                                break
-                else:
-                    # Fall back to the text content
+                # Case 1: For hero text elements (specific to the provided SharePoint layout)
+                if item.get_attribute("class") and "heroTextWithHeroCommandsWrapped" in item.get_attribute("class"):
                     file_name = item.text.strip()
                     
-                    # If the text doesn't include extension, try to add it from href
-                    if not any(file_name.upper().endswith(ext) for ext in VIDEO_EXTENSIONS):
-                        # Try to extract from the href
-                        for ext in VIDEO_EXTENSIONS:
-                            if ext in href.upper():
-                                file_name += ext.lower()
+                    # Try to find file size in nearby cells
+                    try:
+                        # Navigate up to the row and find size cell
+                        row_element = item
+                        for _ in range(5):  # Try navigating up a few levels to find the row
+                            if row_element.get_attribute("role") == "row":
                                 break
+                            row_element = row_element.find_element(By.XPATH, "./..")
+                        
+                        # Find size element
+                        if row_element.get_attribute("role") == "row":
+                            size_cells = row_element.find_elements(By.CSS_SELECTOR, "[data-automationid='field-FileSizeDisplay']")
+                            if size_cells:
+                                file_size = size_cells[0].text.strip()
+                    except Exception as e:
+                        logger.debug(f"Could not extract size info: {e}")
                 
-                # Last resort: extract filename from the href
-                if not file_name:
-                    path_parts = href.split("/")
-                    file_name = path_parts[-1]
-                    # URL decode if necessary
-                    file_name = urllib.parse.unquote(file_name)
+                # Case 2: For link elements (from previous methods)
+                elif is_link:
+                    href = item.get_attribute("href") or ""
+                    aria_label = item.get_attribute("aria-label") or ""
+                    text_content = item.text.strip()
+                    
+                    # Use multiple methods to extract filename
+                    if aria_label and "File" in aria_label:
+                        parts = aria_label.split(",")
+                        if len(parts) > 1:
+                            file_name = parts[0].strip()
+                        else:
+                            parts = aria_label.split("File")
+                            if len(parts) > 1:
+                                file_name = parts[0].strip()
+                    
+                    if not file_name and text_content:
+                        file_name = text_content
+                    
+                    if not file_name and href:
+                        path_parts = href.split("/")
+                        url_filename = path_parts[-1] if path_parts else ""
+                        if "?" in url_filename:
+                            url_filename = url_filename.split("?")[0]
+                        file_name = urllib.parse.unquote(url_filename)
                 
-                # Skip if we still don't have a valid file name
+                # Skip if no valid file name found
                 if not file_name or file_name.strip() in ["Name", "Modified", "Size", "Type"]:
                     continue
                 
-                logger.info(f"Found file: {file_name}")
+                # Determine if this is a video file
+                is_video = any(file_name.upper().endswith(ext.upper()) for ext in VIDEO_EXTENSIONS) or \
+                           any(pattern in file_name.upper() for pattern in VIDEO_PATTERNS)
+                
+                logger.info(f"Found file: {file_name} ({file_size}) (Video: {is_video})")
                 
                 # Add to the list of files
                 file_list.append({
-                    'index': len(file_list) + 1,
+                    'index': file_index,
                     'name': file_name,
-                    'size': "Unknown size",  # Size may not be readily available in classic view
+                    'size': file_size,
                     'element': item,
-                    'is_video': any(file_name.lower().endswith(ext.lower()) for ext in VIDEO_EXTENSIONS)
+                    'is_video': is_video
                 })
-            except StaleElementReferenceException:
-                logger.warning(f"Element {index} is stale, skipping")
-                continue
+                file_index += 1
+                
             except Exception as e:
                 logger.warning(f"Error processing item {index}: {e}")
                 continue
         
+        # Return results
         if file_list:
             logger.info(f"Successfully identified {len(file_list)} files")
             return file_list
         else:
             logger.error("No files could be extracted from the page")
             print("\n❌ TROUBLESHOOTING:")
-            print("1. Try running with a URL directly to the folder with videos")
-            print("2. Check sharepoint_page.png to see if the files are visible in the browser")
-            print("3. The SharePoint page might use a different structure than expected")
+            print("1. Check the screenshot at sharepoint_page.png")
+            print("2. Make sure you're using a URL that points directly to a folder with files")
+            print("3. Try a different browser or disable any SharePoint browser extensions")
             return []
             
     except Exception as e:
         logger.error(f"Error finding files: {e}")
         print("\n❌ ERROR: Could not process the SharePoint page")
         print(f"Detailed error: {str(e)}")
+        # if browser:
+        #     take_screenshot(browser, "error_screenshot.png")
         return []
