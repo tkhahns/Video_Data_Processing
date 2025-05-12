@@ -33,9 +33,10 @@ def main():
                                                  'If no command is specified, runs in interactive mode.')
     
     # Add global options - these should be before the subparsers
-    parser.add_argument('--use-feat', action='store_true', help='Use py-feat for emotion recognition instead of DeepFace')
     parser.add_argument('--with-pose', '-p', action='store_true', help='Enable body pose estimation (default)')
     parser.add_argument('--no-pose', action='store_true', help='Disable body pose estimation')
+    parser.add_argument('--input-dir', help='Directory containing input video files')
+    parser.add_argument('--output-dir', help='Directory to save output files')
     
     # Create subparsers for different commands
     subparsers = parser.add_subparsers(dest='command', help='Command to run')
@@ -89,9 +90,9 @@ def main():
         logger.info("No command specified. Running in interactive mode.")
         # Create default arguments for interactive mode
         args.command = 'interactive'
-        args.input_dir = 'data/videos'
+        args.input_dir = args.input_dir or 'data/videos'  # Use provided input-dir or default
         args.recursive = False
-        args.output_dir = 'output/emotions'
+        args.output_dir = args.output_dir or 'output/emotions'  # Use provided output-dir or default
 
     # Set body pose estimation as default, unless --no-pose is specified
     if not hasattr(args, 'with_pose'):
