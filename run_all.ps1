@@ -112,9 +112,9 @@ if (Get-Command poetry -ErrorAction SilentlyContinue) {
             poetry run python -m src.speech_to_text --input-dir $SPEECH_OUTPUT_DIR --output-dir $TRANSCRIPT_OUTPUT_DIR
             $TRANSCRIPT_EXIT = $LASTEXITCODE
             
-            # STEP 4: Run emotion recognition on the original videos
-            Write-Host "`n[6/6] Running emotion recognition on downloaded videos..." -ForegroundColor Green
-            poetry run python -m src.emotion_recognition.cli --input-dir $DOWNLOADS_DIR --output-dir $EMOTIONS_AND_POSE_DIR --with-pose
+            # STEP 4: Run emotion and pose recognition on the original videos
+            Write-Host "`n[6/6] Running emotion and pose recognition on downloaded videos..." -ForegroundColor Green
+            poetry run python -m src.emotion_and_pose_recognition.cli --input-dir $DOWNLOADS_DIR --output-dir $EMOTIONS_AND_POSE_DIR --with-pose
             $EMOTION_EXIT = $LASTEXITCODE
             
             # Report the final status of all pipeline steps
@@ -122,7 +122,7 @@ if (Get-Command poetry -ErrorAction SilentlyContinue) {
             Write-Host "- Video Download: $(if ($DOWNLOAD_EXIT -eq 0) { "✅ Success" } else { "❌ Failed" })" -ForegroundColor $(if ($DOWNLOAD_EXIT -eq 0) { "Green" } else { "Red" })
             Write-Host "- Speech Separation: $(if ($SPEECH_EXIT -eq 0) { "✅ Success" } else { "❌ Failed" })" -ForegroundColor $(if ($SPEECH_EXIT -eq 0) { "Green" } else { "Red" })
             Write-Host "- Speech-to-Text: $(if ($TRANSCRIPT_EXIT -eq 0) { "✅ Success" } else { "❌ Failed" })" -ForegroundColor $(if ($TRANSCRIPT_EXIT -eq 0) { "Green" } else { "Red" })
-            Write-Host "- Emotion Recognition with Pose: $(if ($EMOTION_EXIT -eq 0) { "✅ Success" } else { "❌ Failed" })" -ForegroundColor $(if ($EMOTION_EXIT -eq 0) { "Green" } else { "Red" })
+            Write-Host "- Emotion and Pose Recognition: $(if ($EMOTION_EXIT -eq 0) { "✅ Success" } else { "❌ Failed" })" -ForegroundColor $(if ($EMOTION_EXIT -eq 0) { "Green" } else { "Red" })
             
             Write-Host "`nResults and outputs:"
             Write-Host "- Downloaded videos: $DOWNLOADS_DIR"

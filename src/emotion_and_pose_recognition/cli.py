@@ -1,5 +1,5 @@
 """
-Command-line interface for emotion recognition from videos.
+Command-line interface for emotion and pose recognition from videos.
 """
 import os
 import sys
@@ -12,7 +12,7 @@ parent_dir = str(Path(__file__).resolve().parent.parent.parent)
 if parent_dir not in sys.path:
     sys.path.append(parent_dir)
 
-from src.emotion_recognition import processor, utils
+from src.emotion_and_pose_recognition import processor, utils
 
 # Set up logging
 try:
@@ -27,9 +27,9 @@ except ImportError:
     logger = logging.getLogger(__name__)
 
 def main():
-    """Main entry point for the emotion recognition CLI."""
+    """Main entry point for the emotion and pose recognition CLI."""
     # Create argument parser
-    parser = argparse.ArgumentParser(description='Facial Emotion Recognition from Video. '
+    parser = argparse.ArgumentParser(description='Facial Emotion and Body Pose Recognition from Video. '
                                                  'If no command is specified, runs in interactive mode.')
     
     # Add global options - these should be before the subparsers

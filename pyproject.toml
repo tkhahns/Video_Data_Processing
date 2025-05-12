@@ -25,7 +25,7 @@ moviepy = ">=1.0.3"
 pydub = ">=0.25.1"
 ffmpeg-python = ">=0.2.0"
 
-# Emotion recognition dependencies
+# Emotion and pose recognition dependencies
 [tool.poetry.group.emotion]
 optional = true
 

@@ -76,9 +76,9 @@ if command -v poetry &>/dev/null; then
             poetry run scripts/macos/run_speech_to_text.sh --input-dir "$SPEECH_OUTPUT_DIR" --output-dir "$TRANSCRIPT_OUTPUT_DIR"
             TRANSCRIPT_EXIT=$?
             
-            # STEP 4: Run emotion recognition on the original videos
-            echo -e "\n[6/6] Running emotion recognition on downloaded videos..."
-            poetry run scripts/macos/run_emotion_recognition.sh --input-dir "$DOWNLOADS_DIR" --output-dir "$EMOTIONS_AND_POSE_DIR"
+            # STEP 4: Run emotion and pose recognition on the original videos
+            echo -e "\n[6/6] Running emotion and pose recognition on downloaded videos..."
+            poetry run scripts/macos/run_emotion_and_pose_recognition.sh --input-dir "$DOWNLOADS_DIR" --output-dir "$EMOTIONS_AND_POSE_DIR"
             EMOTION_EXIT=$?
             
             # Report the final status of all pipeline steps
@@ -86,7 +86,7 @@ if command -v poetry &>/dev/null; then
             echo "- Video Download: $([ $DOWNLOAD_EXIT -eq 0 ] && echo "✅ Success" || echo "❌ Failed")"
             echo "- Speech Separation: $([ $SPEECH_EXIT -eq 0 ] && echo "✅ Success" || echo "❌ Failed")"
             echo "- Speech-to-Text: $([ $TRANSCRIPT_EXIT -eq 0 ] && echo "✅ Success" || echo "❌ Failed")"
-            echo "- Emotion Recognition with Pose: $([ $EMOTION_EXIT -eq 0 ] && echo "✅ Success" || echo "❌ Failed")"
+            echo "- Emotion and Pose Recognition: $([ $EMOTION_EXIT -eq 0 ] && echo "✅ Success" || echo "❌ Failed")"
             
             echo -e "\nResults and outputs:"
             echo "- Downloaded videos: $DOWNLOADS_DIR"

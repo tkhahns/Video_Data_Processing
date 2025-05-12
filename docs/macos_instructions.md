@@ -192,14 +192,14 @@ poetry run scripts/macos/run_speech_to_text.sh --model whisperx  # Transcription
 
 ```bash
 # Interactive mode
-poetry run scripts/macos/run_emotion_recognition.sh
+poetry run scripts/macos/run_emotion_and_pose_recognition.sh
 
 # With specific input and output directories
-poetry run scripts/macos/run_emotion_recognition.sh --input-dir "./my-videos" --output-dir "./my-emotions"
+poetry run scripts/macos/run_emotion_and_pose_recognition.sh --input-dir "./my-videos" --output-dir "./my-emotions"
 
-# Emotion recognition always includes pose estimation by default
+# Emotion and pose recognition includes pose estimation by default
 # To disable pose estimation (not recommended)
-poetry run scripts/macos/run_emotion_recognition.sh --no-pose
+poetry run scripts/macos/run_emotion_and_pose_recognition.sh --no-pose
 ```
 
 ---
@@ -220,8 +220,8 @@ poetry run python -m src.separate_speech --input-dir "./my-videos" --output-dir 
 # Speech to text
 poetry run python -m src.speech_to_text --input-dir "./my-speech" --output-dir "./my-transcripts"
 
-# Emotion recognition
-poetry run python -m src.emotion_recognition.cli --input-dir "./my-videos" --output-dir "./my-emotions" --with-pose
+# Emotion and pose recognition
+poetry run python -m src.emotion_and_pose_recognition.cli --input-dir "./my-videos" --output-dir "./my-emotions" --with-pose
 ```
 
 ### Customizing the Pipeline

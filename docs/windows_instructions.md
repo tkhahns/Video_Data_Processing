@@ -184,14 +184,14 @@ poetry run .\scripts\windows\run_speech_to_text.ps1 --model whisperx  # Transcri
 
 ```powershell
 # Interactive mode
-poetry run .\scripts\windows\run_emotion_recognition.ps1
+poetry run .\scripts\windows\run_emotion_and_pose_recognition.ps1
 
 # With specific input and output directories
-poetry run .\scripts\windows\run_emotion_recognition.ps1 --input-dir ".\my-videos" --output-dir ".\my-emotions"
+poetry run .\scripts\windows\run_emotion_and_pose_recognition.ps1 --input-dir ".\my-videos" --output-dir ".\my-emotions"
 
-# Emotion recognition always includes pose estimation by default
+# Emotion and pose recognition includes pose estimation by default
 # To disable pose estimation (not recommended)
-poetry run .\scripts\windows\run_emotion_recognition.ps1 --no-pose
+poetry run .\scripts\windows\run_emotion_and_pose_recognition.ps1 --no-pose
 ```
 
 ---
@@ -212,8 +212,8 @@ poetry run python -m src.separate_speech --input-dir ".\my-videos" --output-dir 
 # Speech to text
 poetry run python -m src.speech_to_text --input-dir ".\my-speech" --output-dir ".\my-transcripts"
 
-# Emotion recognition
-poetry run python -m src.emotion_recognition.cli --input-dir ".\my-videos" --output-dir ".\my-emotions" --with-pose
+# Emotion and pose recognition
+poetry run python -m src.emotion_and_pose_recognition.cli --input-dir ".\my-videos" --output-dir ".\my-emotions" --with-pose
 ```
 
 ### Troubleshooting

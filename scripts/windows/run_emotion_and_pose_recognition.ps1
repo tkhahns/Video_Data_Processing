@@ -1,6 +1,6 @@
-# Video Data Processing Emotion Recognition
-Write-Host "=== Video Data Processing Emotion Recognition ===" -ForegroundColor Cyan
-Write-Host "This script analyzes emotions in video files." -ForegroundColor Cyan
+# Video Data Processing Emotion and Pose Recognition
+Write-Host "=== Video Data Processing Emotion and Pose Recognition ===" -ForegroundColor Cyan
+Write-Host "This script analyzes emotions and body poses in video files." -ForegroundColor Cyan
 
 # Get the script's directory and project root
 $SCRIPT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -45,7 +45,6 @@ if ($args.Count -gt 0 -and ($args[0] -eq "--help" -or $args[0] -eq "-h")) {
 $inputDir = $null
 $outputDir = $null
 $otherArgs = @()
-$noPosePresent = $false
 
 for ($i = 0; $i -lt $args.Count; $i++) {
     if ($args[$i] -eq "--input-dir" -and $i+1 -lt $args.Count) {
@@ -56,17 +55,13 @@ for ($i = 0; $i -lt $args.Count; $i++) {
         $outputDir = $args[$i+1]
         $i++
     }
-    elseif ($args[$i] -eq "--no-pose") {
-        $noPosePresent = $true
-        $otherArgs += $args[$i]
-    }
     else {
         $otherArgs += $args[$i]
     }
 }
 
 # Run the emotion recognition script
-Write-Host "`n[2/2] Running emotion recognition analysis..." -ForegroundColor Green
+Write-Host "`n[2/2] Running emotion and pose recognition analysis..." -ForegroundColor Green
 
 # Build command based on input parameters
 $cmdArgs = @()
@@ -83,7 +78,15 @@ if ($outputDir) {
 }
 
 # Always add pose estimation by default (unless --no-pose is explicitly included)
-if (-not $noPosePresent) {
+$NO_POSE_PRESENT = $false
+foreach ($arg in $otherArgs) {
+    if ($arg -eq "--no-pose") {
+        $NO_POSE_PRESENT = $true
+        break
+    }
+}
+
+if (-not $NO_POSE_PRESENT) {
     $cmdArgs += "--with-pose"
 }
 
@@ -103,12 +106,12 @@ try {
     }
 
     if ($LASTEXITCODE -eq 0) {
-        Write-Host "`nEmotion recognition analysis completed successfully." -ForegroundColor Green
+        Write-Host "`nEmotion and pose recognition analysis completed successfully." -ForegroundColor Green
     } else {
-        Write-Host "`nAn error occurred during emotion recognition analysis." -ForegroundColor Red
+        Write-Host "`nAn error occurred during emotion and pose recognition analysis." -ForegroundColor Red
         exit $LASTEXITCODE
     }
 } catch {
-    Write-Host "`nAn exception occurred during emotion recognition: $_" -ForegroundColor Red
+    Write-Host "`nAn exception occurred during emotion and pose recognition: $_" -ForegroundColor Red
     exit 1
 }

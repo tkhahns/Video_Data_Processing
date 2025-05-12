@@ -3,8 +3,8 @@
 # Exit on error
 set -e
 
-echo "=== Video Data Processing Emotion Recognition ==="
-echo "This script analyzes emotions in video files."
+echo "=== Video Data Processing Emotion and Pose Recognition ==="
+echo "This script analyzes emotions and body poses in video files."
 
 # Get the script's directory and project root
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
@@ -34,7 +34,7 @@ if [ "$1" == "--help" ] || [ "$1" == "-h" ]; then
     echo ""
     echo "Options:"
     echo "  --input-dir DIR      Directory containing input video files"
-    echo "  --output-dir DIR     Directory to save emotion analysis results (default: ./output/emotions)"
+    echo "  --output-dir DIR     Directory to save emotion and pose analysis results (default: ./output/emotions_and_pose)"
     echo "  --batch              Process all videos in input directory"
     echo "  --interactive        Force interactive video selection mode"
     echo "  --debug              Enable debug logging"
@@ -63,8 +63,8 @@ while [ $i -le $# ]; do
     i=$((i+1))
 done
 
-# Run the emotion recognition script
-echo -e "\n[2/2] Running emotion recognition analysis..."
+# Run the emotion and pose recognition script
+echo -e "\n[2/2] Running emotion and pose recognition analysis..."
 
 # Build command based on input parameters
 cmd_args=()
@@ -101,15 +101,15 @@ done
 # Use Poetry to run the script
 if [ ${#cmd_args[@]} -eq 0 ] && [ ${#other_args[@]} -eq 0 ]; then
     echo "Entering interactive mode with pose estimation..."
-    poetry run python -m src.emotion_recognition.cli --with-pose --interactive
+    poetry run python -m src.emotion_and_pose_recognition.cli --with-pose --interactive
 else
     # Otherwise, pass all arguments to the script
-    poetry run python -m src.emotion_recognition.cli "${cmd_args[@]}"
+    poetry run python -m src.emotion_and_pose_recognition.cli "${cmd_args[@]}"
 fi
 
 if [ $? -eq 0 ]; then
-    echo -e "\nEmotion recognition analysis completed successfully."
+    echo -e "\nEmotion and pose recognition analysis completed successfully."
 else
-    echo -e "\nAn error occurred during emotion recognition analysis."
+    echo -e "\nAn error occurred during emotion and pose recognition analysis."
     exit 1
 fi
