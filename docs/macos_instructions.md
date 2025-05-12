@@ -131,6 +131,8 @@ Each component can also be run separately if you need to process only specific s
 
 ### 1. Download Videos from SharePoint
 
+The download module now uses a manual approach where you interact with SharePoint in the browser:
+
 ```bash
 # Run with Poetry (interactive mode)
 poetry run scripts/macos/run_download_videos.sh
@@ -143,6 +145,19 @@ poetry run scripts/macos/run_download_videos.sh --url "URL" --output-dir "./my-v
 poetry run scripts/macos/run_download_videos.sh --list-only
 poetry run scripts/macos/run_download_videos.sh --debug
 ```
+
+This will:
+1. Open a browser window with the SharePoint site
+2. Display all available files 
+3. Provide instructions for manual downloading:
+   - For individual files: right-click and select "Download"
+   - For multiple files: select files using checkboxes and download as ZIP
+4. Monitor your system's Downloads folder for:
+   - Downloaded video files - moved automatically to the output directory
+   - ZIP files - extracted automatically to get video files, then ZIP is deleted
+5. Automatically complete when all downloads are processed (no need to stop manually)
+
+The process will automatically proceed to the next step in the pipeline once downloads are complete.
 
 ### 2. Extract Speech from Videos
 
