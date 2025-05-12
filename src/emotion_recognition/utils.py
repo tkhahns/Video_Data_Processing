@@ -173,27 +173,6 @@ def find_video_files(paths=None, recursive=False):
     
     return video_files
 
-def select_output_format():
-    """
-    Prompt the user to select the output format for emotion recognition.
-    
-    Returns:
-        bool: True for log-only output, False for video+log output
-    """
-    while True:
-        print("\nWhich output format do you want?")
-        print("1. Annotated video + emotion log (slower)")
-        print("2. Emotion log only (faster)")
-        
-        choice = input("\nYour choice (1-2): ").strip()
-        
-        if choice == '1':
-            return False  # Not log-only (produce both video and log)
-        elif choice == '2':
-            return True   # Log-only mode
-        else:
-            print("Invalid choice. Please enter 1 or 2.")
-
 def select_files_from_list(file_list):
     """
     Allow user to select files from a provided list.
@@ -267,6 +246,6 @@ def select_files_from_list(file_list):
             print("Invalid input. Please enter numbers separated by commas.")
     
     # Now prompt for output format
-    log_only = select_output_format()
+    log_only = False
     
     return selected_files, log_only
