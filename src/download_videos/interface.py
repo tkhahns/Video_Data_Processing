@@ -46,12 +46,12 @@ def display_manual_download_instructions():
     print("2. For individual files: right-click on a file and select 'Download' from the menu")
     print("3. For multiple files: select checkboxes next to files, then click 'Download' button in the toolbar")
     print("4. All downloaded files will be automatically processed and moved to the output directory")
-    print("5. Press Ctrl+C when you've finished downloading all desired files")
+    print("5. The process will automatically continue after downloads are complete")
     print("\n===================================")
     
     input("Press Enter to open the SharePoint page and start downloading...")
     
-    print("Monitoring downloads folder. Press Ctrl+C when finished downloading.")
+    print("Monitoring downloads folder. Will automatically continue after downloads are complete.")
 
 def prompt_for_file_selection(file_list):
     """Prompt user to select files to download."""

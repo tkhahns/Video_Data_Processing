@@ -21,14 +21,15 @@ from selenium.common.exceptions import TimeoutException, ElementNotInteractableE
 # Get logger with colored output
 logger = init_logging.get_logger(__name__)
 
-def monitor_downloads(download_dir, output_dir, timeout=600):
+def monitor_downloads(download_dir, output_dir, timeout=1800, idle_timeout=60):
     """
     Monitor the downloads directory for new files and process them.
     
     Args:
         download_dir: Directory to monitor for downloads
         output_dir: Directory to move processed files to
-        timeout: Maximum time to wait in seconds (default: 10 minutes)
+        timeout: Maximum total time to wait in seconds (default: 30 minutes)
+        idle_timeout: Time to wait after last file activity before auto-completing (default: 60 seconds)
     
     Returns:
         Tuple of (successful downloads, failed downloads)
@@ -46,6 +47,7 @@ def monitor_downloads(download_dir, output_dir, timeout=600):
     logger.info(f"Initial files in download directory: {len(initial_files)}")
     
     start_time = time.time()
+    last_activity_time = start_time
     successful = 0
     failed = 0
     
@@ -54,12 +56,19 @@ def monitor_downloads(download_dir, output_dir, timeout=600):
     print("2. For a single file: right-click and select 'Download'")
     print("3. For multiple files: select multiple files, then download as ZIP")
     print("4. This tool will automatically process downloads and move them to the output directory")
-    print("5. Press Ctrl+C to stop monitoring and finish")
+    print("5. The process will automatically continue after a period of inactivity")
     print("=====================================")
     
     try:
         # Start monitoring in a loop
         while time.time() - start_time < timeout:
+            # Check if we've been idle for too long
+            current_time = time.time()
+            if (current_time - last_activity_time > idle_timeout) and successful > 0:
+                logger.info(f"No new download activity for {idle_timeout} seconds and {successful} file(s) processed. Auto-continuing.")
+                print(f"\n✅ Download monitoring completed: Processed {successful} file(s)")
+                break
+                
             # Check current files in download directory
             if not os.path.exists(download_dir):
                 time.sleep(2)
@@ -71,6 +80,7 @@ def monitor_downloads(download_dir, output_dir, timeout=600):
             new_files = current_files - initial_files
             
             # Process each new file
+            activity_occurred = False
             for filename in new_files:
                 file_path = os.path.join(download_dir, filename)
                 
@@ -80,6 +90,7 @@ def monitor_downloads(download_dir, output_dir, timeout=600):
                     
                 # Wait a moment to ensure the file is completely downloaded
                 time.sleep(2)
+                activity_occurred = True
                 
                 try:
                     # Check if file is a ZIP archive
@@ -108,6 +119,10 @@ def monitor_downloads(download_dir, output_dir, timeout=600):
                 except Exception as e:
                     logger.error(f"Error processing file {filename}: {e}")
                     failed += 1
+            
+            # Update the last activity time if there was any file processing
+            if activity_occurred:
+                last_activity_time = time.time()
             
             # Sleep before checking again
             time.sleep(2)
@@ -148,6 +163,14 @@ def monitor_downloads(download_dir, output_dir, timeout=600):
                     failed += 1
     except Exception as e:
         logger.error(f"Error during final check: {e}")
+    
+    if successful > 0:
+        print(f"\n✅ Download complete: Successfully processed {successful} video files")
+    else:
+        print("\n⚠️ No video files were processed. Check if downloads completed correctly.")
+    
+    # Small pause to let user see the results before continuing
+    time.sleep(3)
     
     return successful, failed
 
