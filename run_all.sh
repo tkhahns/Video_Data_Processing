@@ -56,7 +56,7 @@ if command -v poetry &>/dev/null; then
     chmod +x "$PROJECT_ROOT/scripts/macos/run_download_videos.sh"
     chmod +x "$PROJECT_ROOT/scripts/macos/run_separate_speech.sh"
     chmod +x "$PROJECT_ROOT/scripts/macos/run_speech_to_text.sh"
-    chmod +x "$PROJECT_ROOT/scripts/macos/run_emotion_recognition.sh"
+    chmod +x "$PROJECT_ROOT/scripts/macos/run_emotion_and_pose_recognition.sh"
     
     # STEP 1: Run video downloader
     echo -e "\n[3/6] Running video downloader with Poetry..."
