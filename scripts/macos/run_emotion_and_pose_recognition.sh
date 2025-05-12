@@ -30,11 +30,11 @@ fi
 
 # Help message if --help flag is provided
 if [ "$1" == "--help" ] || [ "$1" == "-h" ]; then
-    echo -e "\nUsage: ./run_emotion_recognition.sh [options] <video_file(s)>"
+    echo -e "\nUsage: ./run_emotion_and_pose_recognition.sh [options] <video_file(s)>"
     echo ""
     echo "Options:"
     echo "  --input-dir DIR      Directory containing input video files"
-    echo "  --output-dir DIR     Directory to save emotion and pose analysis results (default: ./output/emotions_and_pose)"
+    echo "  --output-dir DIR     Directory to save emotion analysis results (default: ./output/emotions)"
     echo "  --batch              Process all videos in input directory"
     echo "  --interactive        Force interactive video selection mode"
     echo "  --debug              Enable debug logging"
