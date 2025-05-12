@@ -57,6 +57,7 @@ def monitor_downloads(download_dir, output_dir, timeout=1800, idle_timeout=60):
     print("3. For multiple files: select multiple files, then download as ZIP")
     print("4. This tool will automatically process downloads and move them to the output directory")
     print("5. The process will automatically continue after a period of inactivity")
+    print("6. You can press Ctrl+C at any time to stop monitoring and continue")
     print("=====================================")
     
     try:

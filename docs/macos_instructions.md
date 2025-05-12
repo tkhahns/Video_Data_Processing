@@ -156,6 +156,7 @@ This will:
    - Downloaded video files - moved automatically to the output directory
    - ZIP files - extracted automatically to get video files, then ZIP is deleted
 5. Automatically complete when all downloads are processed (no need to stop manually)
+6. You can press Ctrl+C at any time to stop the monitoring and continue the pipeline
 
 The process will automatically proceed to the next step in the pipeline once downloads are complete.
 

@@ -47,9 +47,8 @@ def display_manual_download_instructions():
     print("3. For multiple files: select checkboxes next to files, then click 'Download' button in the toolbar")
     print("4. All downloaded files will be automatically processed and moved to the output directory")
     print("5. The process will automatically continue after downloads are complete")
+    print("6. You can press Ctrl+C at any time to stop the monitoring and continue the pipeline")
     print("\n===================================")
-    
-    input("Press Enter to open the SharePoint page and start downloading...")
     
     print("Monitoring downloads folder. Will automatically continue after downloads are complete.")
 
