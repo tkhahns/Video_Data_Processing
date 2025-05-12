@@ -18,9 +18,10 @@ if (-not (Get-Command poetry -ErrorAction SilentlyContinue)) {
 } else {
     # Install dependencies using Poetry
     Write-Host "`n[1/2] Installing dependencies with Poetry..." -ForegroundColor Green
-    poetry install --with download || {
-        Write-Host "Poetry installation had issues. Retrying with basic dependencies only..." -ForegroundColor Yellow
-        poetry install
+    poetry install --with download --with common
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Poetry installation had issues. Retrying with common dependencies only..." -ForegroundColor Yellow
+        poetry install --with common
     }
 }
 
@@ -30,26 +31,25 @@ if ($args.Count -gt 0 -and ($args[0] -eq "--help" -or $args[0] -eq "-h")) {
     Write-Host ""
     Write-Host "Options:" -ForegroundColor Yellow
     Write-Host "  --url URL             SharePoint folder URL containing videos (optional)"
-    Write-Host "  --output-dir PATH     Directory to save downloaded files (default: ./data/videos)"
+    Write-Host "  --output-dir PATH     Directory to save downloaded files (default: .\data\videos)"
     Write-Host "  --list-only           Just list files without downloading"
     Write-Host "  --debug               Enable debug mode with detailed logging"
     Write-Host ""
     exit 0
 }
 
-# Parse arguments to check if URL is provided
+# Check if URL is provided in arguments
 $urlProvided = $false
-$url = ""
+$url = $null
 $otherArgs = @()
-$i = 0
-while ($i -lt $args.Count) {
+
+for ($i = 0; $i -lt $args.Count; $i++) {
     if ($args[$i] -eq "--url" -and $i+1 -lt $args.Count) {
         $url = $args[$i+1]
         $urlProvided = $true
-        $i += 2
+        $i++
     } else {
         $otherArgs += $args[$i]
-        $i++
     }
 }
 
@@ -74,17 +74,12 @@ foreach ($arg in $otherArgs) {
     $cmdArgs += $arg
 }
 
-try {
-    # Run the Python module
-    poetry run python -m src.download_videos $cmdArgs
-    
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "`nDownload process completed successfully." -ForegroundColor Green
-    } else {
-        Write-Host "`nAn error occurred during the download process." -ForegroundColor Red
-        exit $LASTEXITCODE
-    }
-} catch {
-    Write-Host "`nAn exception occurred during download: $_" -ForegroundColor Red
-    exit 1
+# Use Poetry to run the script
+poetry run python -m src.download_videos $cmdArgs
+
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "`nDownload process completed successfully." -ForegroundColor Green
+} else {
+    Write-Host "`nAn error occurred during the download process." -ForegroundColor Red
+    exit $LASTEXITCODE
 }
