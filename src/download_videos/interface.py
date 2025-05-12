@@ -39,6 +39,20 @@ def display_file_list(file_list):
     
     print("\n=========================================")
 
+def display_manual_download_instructions():
+    """Display instructions for manual downloading."""
+    print("\n=== Manual Download Instructions ===")
+    print("1. You'll need to select and download files manually from the SharePoint interface")
+    print("2. For individual files: right-click on a file and select 'Download' from the menu")
+    print("3. For multiple files: select checkboxes next to files, then click 'Download' button in the toolbar")
+    print("4. All downloaded files will be automatically processed and moved to the output directory")
+    print("5. Press Ctrl+C when you've finished downloading all desired files")
+    print("\n===================================")
+    
+    input("Press Enter to open the SharePoint page and start downloading...")
+    
+    print("Monitoring downloads folder. Press Ctrl+C when finished downloading.")
+
 def prompt_for_file_selection(file_list):
     """Prompt user to select files to download."""
     while True:

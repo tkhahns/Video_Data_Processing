@@ -2,8 +2,14 @@
 File download functionality.
 """
 import os
-from utils import init_logging
 import time
+import zipfile
+import glob
+import shutil
+from pathlib import Path
+from utils import init_logging
+import threading
+from datetime import datetime
 import requests
 import sys
 from selenium import webdriver
@@ -15,207 +21,197 @@ from selenium.common.exceptions import TimeoutException, ElementNotInteractableE
 # Get logger with colored output
 logger = init_logging.get_logger(__name__)
 
-def download_selected_files(browser, selected_files, output_dir):
-    """Download files directly to the machine."""
+def monitor_downloads(download_dir, output_dir, timeout=600):
+    """
+    Monitor the downloads directory for new files and process them.
+    
+    Args:
+        download_dir: Directory to monitor for downloads
+        output_dir: Directory to move processed files to
+        timeout: Maximum time to wait in seconds (default: 10 minutes)
+    
+    Returns:
+        Tuple of (successful downloads, failed downloads)
+    """
+    logger.info(f"Starting to monitor downloads in {download_dir}")
+    logger.info(f"Downloaded files will be processed and moved to {output_dir}")
+    
+    # Ensure output directory exists
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+        logger.info(f"Created output directory: {output_dir}")
+    
+    # Get initial list of files
+    initial_files = set(os.listdir(download_dir)) if os.path.exists(download_dir) else set()
+    logger.info(f"Initial files in download directory: {len(initial_files)}")
+    
+    start_time = time.time()
+    successful = 0
+    failed = 0
+    
+    print("\n==== Manual Download Instructions ====")
+    print("1. Select and download files from the browser")
+    print("2. For a single file: right-click and select 'Download'")
+    print("3. For multiple files: select multiple files, then download as ZIP")
+    print("4. This tool will automatically process downloads and move them to the output directory")
+    print("5. Press Ctrl+C to stop monitoring and finish")
+    print("=====================================")
+    
     try:
-        successful_downloads = 0
-        failed_downloads = 0
-        
-        for file in selected_files:
-            try:
-                file_name = file['name']
-                output_path = os.path.join(output_dir, file_name)
+        # Start monitoring in a loop
+        while time.time() - start_time < timeout:
+            # Check current files in download directory
+            if not os.path.exists(download_dir):
+                time.sleep(2)
+                continue
                 
-                # Check if file already exists
-                if os.path.exists(output_path):
-                    logger.info(f"File already exists: {output_path}")
-                    successful_downloads += 1
+            current_files = set(os.listdir(download_dir))
+            
+            # Find new files
+            new_files = current_files - initial_files
+            
+            # Process each new file
+            for filename in new_files:
+                file_path = os.path.join(download_dir, filename)
+                
+                # Skip temporary/partial download files
+                if filename.endswith('.crdownload') or filename.endswith('.part') or filename.endswith('.tmp'):
+                    continue
+                    
+                # Wait a moment to ensure the file is completely downloaded
+                time.sleep(2)
+                
+                try:
+                    # Check if file is a ZIP archive
+                    if filename.lower().endswith('.zip'):
+                        logger.info(f"Processing ZIP archive: {filename}")
+                        zip_success = process_zip_file(file_path, output_dir)
+                        if zip_success:
+                            successful += zip_success
+                        else:
+                            failed += 1
+                    else:
+                        # Check if file is a video file
+                        if is_video_file(filename):
+                            # Move the file to the output directory
+                            dest_path = os.path.join(output_dir, filename)
+                            shutil.move(file_path, dest_path)
+                            logger.info(f"Moved {filename} to {output_dir}")
+                            successful += 1
+                            print(f"✅ Downloaded and processed: {filename}")
+                        else:
+                            logger.info(f"Skipping non-video file: {filename}")
+                    
+                    # Add file to initial files so we don't process it again
+                    initial_files.add(filename)
+                    
+                except Exception as e:
+                    logger.error(f"Error processing file {filename}: {e}")
+                    failed += 1
+            
+            # Sleep before checking again
+            time.sleep(2)
+            
+    except KeyboardInterrupt:
+        print("\nDownload monitoring stopped by user.")
+    
+    # Final check for any remaining downloads
+    try:
+        if os.path.exists(download_dir):
+            final_files = set(os.listdir(download_dir))
+            new_files = final_files - initial_files
+            
+            for filename in new_files:
+                file_path = os.path.join(download_dir, filename)
+                
+                # Skip temporary/partial download files
+                if filename.endswith('.crdownload') or filename.endswith('.part') or filename.endswith('.tmp'):
                     continue
                 
-                logger.info(f"Downloading {file_name}...")
-                
-                # Configure Chrome to download to specified directory
-                download_prefs = {
-                    "download.default_directory": os.path.abspath(output_dir),
-                    "download.prompt_for_download": False,
-                    "download.directory_upgrade": True,
-                    "safebrowsing.enabled": False
-                }
-                browser.execute_cdp_cmd('Page.setDownloadBehavior', {
-                    'behavior': 'allow',
-                    'downloadPath': os.path.abspath(output_dir)
-                })
-                
-                # Method 1: Use right-click context menu to download
                 try:
-                    logger.info("Attempting context menu download...")
-                    
-                    # Right-click on the element to open context menu
-                    webdriver.ActionChains(browser).context_click(file['element']).perform()
-                    time.sleep(1.5)  # Give more time for context menu to appear
-                    
-                    # # Take a screenshot of the context menu for debugging
-                    # browser.save_screenshot(os.path.join(output_dir, "context_menu.png"))
-                    
-                    # First look for the specific downloadCommand element based on user's HTML
-                    download_btn = None
-                    try:
-                        # Look for the button with data-automationid="downloadCommand"
-                        download_btn = browser.find_element(By.CSS_SELECTOR, "button[data-automationid='downloadCommand']")
-                        logger.info("Found download button with data-automationid='downloadCommand'")
-                    except NoSuchElementException:
-                        logger.info("Could not find button with data-automationid='downloadCommand', trying alternative selectors")
-                    
-                    # If first method failed, try other methods
-                    if not download_btn:
-                        # Look for elements with download icon
-                        icons = browser.find_elements(By.CSS_SELECTOR, "i[data-icon-name='download']")
-                        if icons:
-                            # Find the parent button that contains this icon
-                            for icon in icons:
-                                try:
-                                    # Navigate up through parents to find the button
-                                    parent = icon.find_element(By.XPATH, "./..")  # linkContent div
-                                    if parent:
-                                        parent = parent.find_element(By.XPATH, "./..")  # button
-                                        download_btn = parent
-                                        logger.info("Found download button through icon parent")
-                                        break
-                                except:
-                                    continue
-                    
-                    # If still not found, try looking for text
-                    if not download_btn:
-                        # Look for elements with "Download" text
-                        elements_with_text = browser.find_elements(By.XPATH, "//*[contains(text(), 'Download')]")
-                        if elements_with_text:
-                            for el in elements_with_text:
-                                try:
-                                    # Try to find a clickable parent
-                                    parent = el
-                                    for _ in range(3):  # Try a few levels up
-                                        try:
-                                            if parent.tag_name.lower() in ["button", "a"]:
-                                                download_btn = parent
-                                                logger.info(f"Found download button with tag: {parent.tag_name}")
-                                                break
-                                            parent = parent.find_element(By.XPATH, "./..")
-                                        except:
-                                            break
-                                    if download_btn:
-                                        break
-                                except:
-                                    continue
-                    
-                    # Last resort - try className patterns for SharePoint context menus
-                    if not download_btn:
-                        menu_items = browser.find_elements(By.CSS_SELECTOR, ".ms-ContextualMenu-item")
-                        for item in menu_items:
-                            try:
-                                text = item.text.lower()
-                                if "download" in text:
-                                    # Find the button inside this menu item
-                                    buttons = item.find_elements(By.TAG_NAME, "button")
-                                    if buttons:
-                                        download_btn = buttons[0]
-                                        logger.info("Found download button in menu item with 'download' text")
-                                        break
-                            except:
-                                continue
-                    
-                    # Click the download button if found
-                    if download_btn:
-                        # Add explicit wait before clicking
-                        try:
-                            logger.info("Clicking download button...")
-                            browser.execute_script("arguments[0].scrollIntoView(true);", download_btn)
-                            time.sleep(0.5)
-                            download_btn.click()
-                            logger.info("Successfully clicked download button")
-                        except ElementNotInteractableException:
-                            # Try JavaScript click if direct click fails
-                            logger.info("Using JavaScript to click download button")
-                            browser.execute_script("arguments[0].click();", download_btn)
-                        except StaleElementReferenceException:
-                            logger.warning("Download button became stale, trying again")
-                            # Right-click again and retry
-                            webdriver.ActionChains(browser).context_click(file['element']).perform()
-                            time.sleep(1.5)
-                            # Try simpler approach now
-                            browser.find_element(By.XPATH, "//*[contains(text(), 'Download')]").click()
-                    else:
-                        logger.warning("Could not find download button in context menu")
-                        raise Exception("Download button not found in context menu")
-                    
-                    # Wait for download to begin and complete
-                    max_wait = 180  # seconds
-                    poll_interval = 2  # seconds
-                    file_downloading = True
-                    start_time = time.time()
-                    
-                    print(f"\n⬇️ Downloading {file_name}...")
-                    
-                    # Check for both common download files and completed files
-                    while file_downloading and (time.time() - start_time) < max_wait:
-                        # Check if file exists
-                        if os.path.exists(output_path):
-                            # Check if download is complete (not a partial file)
-                            if not output_path.endswith('.crdownload') and not os.path.exists(f"{output_path}.crdownload"):
-                                file_downloading = False
-                                break
-                        
-                        # Check for common partial download extensions
-                        for ext in ['.crdownload', '.part', '.download']:
-                            partial_path = f"{output_path}{ext}"
-                            if os.path.exists(partial_path):
-                                try:
-                                    partial_size = os.path.getsize(partial_path)
-                                    print(f"\rDownloading... {partial_size/1024/1024:.2f} MB", end="")
-                                except:
-                                    pass
-                        
-                        time.sleep(poll_interval)
-                    
-                    if not file_downloading and os.path.exists(output_path):
-                        logger.info(f"File successfully downloaded to {output_path}")
-                        successful_downloads += 1
-                        continue
-                    else:
-                        logger.warning("Context menu download timed out or couldn't be tracked")
-                        
+                    # Process any remaining files
+                    if filename.lower().endswith('.zip'):
+                        logger.info(f"Processing ZIP archive: {filename}")
+                        zip_success = process_zip_file(file_path, output_dir)
+                        if zip_success:
+                            successful += zip_success
+                        else:
+                            failed += 1
+                    elif is_video_file(filename):
+                        dest_path = os.path.join(output_dir, filename)
+                        shutil.move(file_path, dest_path)
+                        logger.info(f"Moved {filename} to {output_dir}")
+                        successful += 1
+                        print(f"✅ Downloaded and processed: {filename}")
                 except Exception as e:
-                    logger.warning(f"Context menu download failed: {e}")
-                    
-                    # Try to close any open context menus
-                    try:
-                        webdriver.ActionChains(browser).move_by_offset(10, 10).click().perform()
-                    except:
-                        pass
-                
-                # Method 2: Try direct URL method if the context menu approach failed
-                # ... existing code ...
-                
-                # Method 3: Last resort - Manual download instructions
-                print(f"\n⚠️ Automatic download methods failed for {file_name}")
-                print("Please try one of these methods:")
-                print("1. Right-click the file and select 'Download' from the context menu")
-                print("2. Click the file and use the download button in the toolbar")
-                print(f"3. Save the file to: {output_path}")
-                
-                # Show interactive prompt for manual intervention
-                user_response = input(f"\nWas the file '{file_name}' downloaded successfully? (y/n): ")
-                if user_response.lower() == 'y':
-                    logger.info(f"User confirmed successful manual download of {file_name}")
-                    successful_downloads += 1
-                else:
-                    logger.warning(f"Manual download reported as unsuccessful for {file_name}")
-                    failed_downloads += 1
-                
-            except Exception as e:
-                logger.error(f"Error downloading {file['name']}: {e}")
-                failed_downloads += 1
-        
-        return successful_downloads, failed_downloads
+                    logger.error(f"Error processing file {filename}: {e}")
+                    failed += 1
     except Exception as e:
-        logger.error(f"Error in download process: {e}")
-        return 0, 0
+        logger.error(f"Error during final check: {e}")
+    
+    return successful, failed
+
+def is_video_file(filename):
+    """Check if a file is a video file based on its extension."""
+    video_extensions = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.wmv', '.mvi', '.m4v', '.3gp']
+    return any(filename.lower().endswith(ext) for ext in video_extensions)
+
+def process_zip_file(zip_path, output_dir):
+    """
+    Extract video files from a ZIP archive and move them to the output directory.
+    
+    Args:
+        zip_path: Path to the ZIP file
+        output_dir: Directory to extract video files to
+        
+    Returns:
+        Number of video files extracted
+    """
+    try:
+        logger.info(f"Opening ZIP file: {zip_path}")
+        extracted_videos = 0
+        
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            # Extract only video files
+            for file_info in zip_ref.infolist():
+                if is_video_file(file_info.filename):
+                    # Get just the filename without directory structure
+                    filename = os.path.basename(file_info.filename)
+                    
+                    # Skip if empty filename (directory)
+                    if not filename:
+                        continue
+                    
+                    # Extract the file to the output directory
+                    zip_ref.extract(file_info, output_dir)
+                    
+                    # If file was extracted within a subdirectory, move it to the output dir root
+                    extracted_path = os.path.join(output_dir, file_info.filename)
+                    target_path = os.path.join(output_dir, filename)
+                    
+                    if extracted_path != target_path:
+                        shutil.move(extracted_path, target_path)
+                        
+                        # Clean up empty directories
+                        dir_path = os.path.dirname(extracted_path)
+                        try:
+                            if os.path.exists(dir_path) and not os.listdir(dir_path):
+                                os.rmdir(dir_path)
+                        except:
+                            pass
+                    
+                    extracted_videos += 1
+                    logger.info(f"Extracted video: {filename}")
+                    print(f"✅ Extracted from ZIP: {filename}")
+        
+        # Delete the ZIP file after extraction
+        try:
+            os.remove(zip_path)
+            logger.info(f"Deleted ZIP file after extraction: {zip_path}")
+        except Exception as e:
+            logger.warning(f"Failed to delete ZIP file {zip_path}: {e}")
+        
+        return extracted_videos
+    except Exception as e:
+        logger.error(f"Error processing ZIP file {zip_path}: {e}")
+        return 0

@@ -5,7 +5,9 @@ import os
 import sys
 import argparse
 import logging
+import tempfile
 from pathlib import Path
+import platform
 
 # Handle imports differently when run as script vs. as module
 if __name__ == "__main__":
@@ -15,8 +17,8 @@ if __name__ == "__main__":
     
     from src.download_videos.browser import setup_browser, authenticate_with_selenium
     from src.download_videos.sharepoint import find_all_files
-    from src.download_videos.interface import display_file_list, prompt_for_file_selection
-    from src.download_videos.download import download_selected_files
+    from src.download_videos.interface import display_file_list, display_manual_download_instructions
+    from src.download_videos.download import monitor_downloads
     from src.download_videos.utils import ensure_dir_exists
     
     # Import from utils package
@@ -25,8 +27,8 @@ else:
     # Use relative imports when imported as a module
     from .browser import setup_browser, authenticate_with_selenium
     from .sharepoint import find_all_files
-    from .interface import display_file_list, prompt_for_file_selection
-    from .download import download_selected_files
+    from .interface import display_file_list, display_manual_download_instructions
+    from .download import monitor_downloads
     from .utils import ensure_dir_exists
     
     # Try using different approaches for importing the logging modules
@@ -48,6 +50,17 @@ logger = init_logging.get_logger(__name__)
 # Videos directory
 VIDEOS_DIR = Path("./data/videos")
 
+def get_default_downloads_dir():
+    """Get the default downloads directory for the current platform."""
+    home = Path.home()
+    
+    if platform.system() == "Windows":
+        return home / "Downloads"
+    elif platform.system() == "Darwin":  # macOS
+        return home / "Downloads"
+    else:  # Linux and other Unix
+        return home / "Downloads"
+
 def run_download(url, output_dir=str(VIDEOS_DIR), list_only=False, headless=False, debug=False):
     """Core download function that can be called from various entry points."""
     # Set debug logging if requested
@@ -58,8 +71,12 @@ def run_download(url, output_dir=str(VIDEOS_DIR), list_only=False, headless=Fals
     # Ensure output directory exists
     ensure_dir_exists(output_dir)
     
-    # Setup browser with download directory configured
-    browser = setup_browser(headless=headless, output_dir=output_dir)
+    # Get default downloads directory for the user's system
+    downloads_dir = str(get_default_downloads_dir())
+    logger.info(f"Using system downloads directory: {downloads_dir}")
+    
+    # Setup browser without configuring download directory (will use system default)
+    browser = setup_browser(headless=headless)
     if not browser:
         logger.error("Failed to set up browser")
         return 1
@@ -86,20 +103,15 @@ def run_download(url, output_dir=str(VIDEOS_DIR), list_only=False, headless=Fals
             logger.info("List-only mode, exiting without downloading")
             return 0
         
-        # Prompt for file selection
-        selected_files = prompt_for_file_selection(all_files)
+        # Display manual download instructions
+        display_manual_download_instructions()
         
-        if not selected_files:
-            logger.info("No files selected for download")
-            return 0
-            
-        logger.info(f"Selected {len(selected_files)} files for download")
+        # Start monitoring downloads directory
+        successful, failed = monitor_downloads(downloads_dir, output_dir, timeout=1800)  # 30 minutes timeout
         
-        # Download selected files
-        successful, failed = download_selected_files(browser, selected_files, output_dir)
-        logger.info(f"Download complete: {successful} files downloaded successfully, {failed} failed")
+        logger.info(f"Download monitoring complete: {successful} files processed successfully, {failed} failed")
         
-        return 0 if failed == 0 else 1
+        return 0 if successful > 0 else 1
         
     finally:
         # Always close the browser
