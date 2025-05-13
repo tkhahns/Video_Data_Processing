@@ -13,16 +13,10 @@ from . import utils
 from copy import deepcopy
 
 # Import the body pose estimator
-try:
-    from .body_pose.estimator import PoseEstimator
-    from .body_pose.utils import overlay_pose_text, save_pose_data
-    POSE_AVAILABLE = True
-except ImportError:
-    # Fall back to standard logging if not already defined
-    if 'logger' not in locals():
-        logger = logging.getLogger(__name__)
-    logger.warning("Body pose estimation module not available. Install with: pip install mediapipe")
-    POSE_AVAILABLE = False
+from .body_pose.estimator import PoseEstimator
+from .body_pose.utils import overlay_pose_text, save_pose_data, draw_pose_skeleton, create_fallback_pose, create_landmark_dict_from_list
+POSE_AVAILABLE = True
+
 
 # Try importing from utils package
 try:
@@ -49,181 +43,6 @@ POSE_CONNECTIONS = [
     (23, 25), (25, 27), (27, 29), (29, 31),
     (24, 26), (26, 28), (28, 30), (30, 32)
 ]
-
-def draw_pose_skeleton(frame, landmarks, color):
-    """
-    Draw skeleton connections between landmarks to visualize body pose.
-    
-    Args:
-        frame: The frame to draw on
-        landmarks: List of landmark coordinates
-        color: BGR color tuple for the skeleton lines
-    """
-    if not landmarks:
-        return  # No landmarks to draw
-    
-    # Log the number of valid landmarks
-    valid_count = sum(1 for l in landmarks if l is not None)
-    logger.debug(f"Drawing skeleton with {valid_count}/{len(landmarks)} valid landmarks")
-    
-    # Convert landmarks to a format usable by OpenCV
-    points = {}  # Use a dict to store only available landmarks
-    for i, landmark in enumerate(landmarks):
-        if landmark is not None:
-            try:
-                x, y = int(landmark[0]), int(landmark[1])
-                points[i] = (x, y)
-            except (ValueError, TypeError, IndexError) as e:
-                logger.debug(f"Could not convert landmark {i}: {e}")
-    
-    # Log the number of valid points
-    logger.debug(f"Converted {len(points)} valid points for skeleton drawing")
-    
-    # Draw the connections for the skeleton
-    connections_drawn = 0
-    for connection in POSE_CONNECTIONS:
-        start_idx, end_idx = connection
-        
-        # Only draw if both landmarks exist in our points dict
-        if start_idx in points and end_idx in points:
-            try:
-                cv2.line(frame, points[start_idx], points[end_idx], color, 2)
-                connections_drawn += 1
-            except Exception as e:
-                logger.debug(f"Error drawing line between points {start_idx} and {end_idx}: {e}")
-    
-    logger.debug(f"Drew {connections_drawn}/{len(POSE_CONNECTIONS)} skeleton connections")
-    
-    # Manual drawing of key segments for better visibility
-    # Draw body center line if possible (vertical line from nose to mid-hip)
-    if 0 in points and 23 in points and 24 in points:
-        # Calculate mid-hip point
-        mid_hip_x = (points[23][0] + points[24][0]) // 2
-        mid_hip_y = (points[23][1] + points[24][1]) // 2
-        
-        # Draw a thicker line for the body center
-        cv2.line(frame, points[0], (mid_hip_x, mid_hip_y), color, 3)
-    
-    # Always draw the points for better visibility
-    for point_idx, point in points.items():
-        # Use larger circles for key points (shoulders, hips, etc)
-        radius = 5 if point_idx in [11, 12, 23, 24] else 3
-        cv2.circle(frame, point, radius, color, -1)
-
-def process_person_landmarks(person_landmarks, width, height):
-    """
-    Process landmarks for a single person from multi-person detection.
-    
-    Args:
-        person_landmarks: Landmarks for a single person
-        width: Frame width for coordinate normalization
-        height: Frame height for coordinate normalization
-        
-    Returns:
-        list: List of 33 landmarks with None for invalid landmarks
-    """
-    safe_landmarks = [None] * 33  # Initialize with None values
-    
-    # Handle different landmark formats
-    if isinstance(person_landmarks, dict):
-        # Dictionary format with named landmarks
-        mapping = {
-            'NOSE': 0, 
-            'LEFT_EYE_INNER': 1, 'LEFT_EYE': 2, 'LEFT_EYE_OUTER': 3,
-            'RIGHT_EYE_INNER': 4, 'RIGHT_EYE': 5, 'RIGHT_EYE_OUTER': 6,
-            'LEFT_EAR': 7, 'RIGHT_EAR': 8,
-            'MOUTH_LEFT': 9, 'MOUTH_RIGHT': 10,
-            'LEFT_SHOULDER': 11, 'RIGHT_SHOULDER': 12,
-            'LEFT_ELBOW': 13, 'RIGHT_ELBOW': 14,
-            'LEFT_WRIST': 15, 'RIGHT_WRIST': 16,
-            'LEFT_PINKY': 17, 'RIGHT_PINKY': 18,
-            'LEFT_INDEX': 19, 'RIGHT_INDEX': 20,
-            'LEFT_THUMB': 21, 'RIGHT_THUMB': 22,
-            'LEFT_HIP': 23, 'RIGHT_HIP': 24,
-            'LEFT_KNEE': 25, 'RIGHT_KNEE': 26,
-            'LEFT_ANKLE': 27, 'RIGHT_ANKLE': 28,
-            'LEFT_HEEL': 29, 'RIGHT_HEEL': 30,
-            'LEFT_FOOT_INDEX': 31, 'RIGHT_FOOT_INDEX': 32
-        }
-        
-        # Map each named landmark to the correct index
-        for name, landmark_data in person_landmarks.items():
-            if name in mapping and isinstance(landmark_data, dict):
-                idx = mapping[name]
-                if 'x' in landmark_data and 'y' in landmark_data:
-                    x_coord = landmark_data['x']
-                    y_coord = landmark_data['y']
-                    
-                    # Scale normalized coordinates if needed
-                    if isinstance(x_coord, float) and 0 <= x_coord <= 1.0:
-                        x_coord *= width
-                    if isinstance(y_coord, float) and 0 <= y_coord <= 1.0:
-                        y_coord *= height
-                        
-                    safe_landmarks[idx] = (x_coord, y_coord)
-    
-    elif isinstance(person_landmarks, (list, tuple)):
-        # List format with index-based landmarks
-        for i, landmark in enumerate(person_landmarks):
-            if i >= 33:  # Only use up to 33 landmarks
-                break
-                
-            if landmark is not None:
-                try:
-                    if isinstance(landmark, (list, tuple)) and len(landmark) >= 2:
-                        # Enhanced handling for non-numeric values
-                        # First check for string values that can't be converted to float
-                        if isinstance(landmark[0], str):
-                            # Try to convert if it's a numeric string
-                            try:
-                                landmark[0] = float(landmark[0]) 
-                            except ValueError:
-                                # If it contains any non-numeric characters, skip this landmark
-                                logger.debug(f"Frame {i}: Invalid x-coordinate string: '{landmark[0]}'")
-                                safe_landmarks.append(None)
-                                continue
-                        
-                        if isinstance(landmark[1], str):
-                            # Try to convert if it's a numeric string
-                            try:
-                                landmark[1] = float(landmark[1])
-                            except ValueError:
-                                # If it contains any non-numeric characters, skip this landmark
-                                logger.debug(f"Frame {i}: Invalid y-coordinate string: '{landmark[1]}'")
-                                safe_landmarks.append(None)
-                                continue
-                        
-                        # Handle common directional indicators or special values
-                        for j in range(2):
-                            if isinstance(landmark[j], str) and landmark[j].upper() in ['N', 'NONE', 'R', 'L', 'RIGHT', 'LEFT', 'M', 'MIDDLE', 'D', 'DOWN', 'U', 'UP']:
-                                safe_landmarks.append(None)
-                                continue
-                            
-                        # Ensure landmark coordinates are numeric and adjust to original frame
-                        x_coord = float(landmark[0])
-                        y_coord = float(landmark[1])
-                        
-                        # Skip invalid coordinates
-                        if not (0 <= x_coord < width and 0 <= y_coord < height):
-                            safe_landmarks.append(None)
-                            continue
-                            
-                        safe_landmarks[i] = (x_coord, y_coord)
-                    elif isinstance(landmark, dict) and 'x' in landmark and 'y' in landmark:
-                        x_coord = landmark['x']
-                        y_coord = landmark['y']
-                        
-                        # Scale normalized coordinates if needed
-                        if isinstance(x_coord, float) and 0 <= x_coord <= 1.0:
-                            x_coord *= width
-                        if isinstance(y_coord, float) and 0 <= y_coord <= 1.0:
-                            y_coord *= height
-                            
-                        safe_landmarks[i] = (x_coord, y_coord)
-                except (TypeError, ValueError, IndexError):
-                    safe_landmarks[i] = None
-    
-    return safe_landmarks
 
 def process_video(input_path, output_path=None, log_path=None, show_preview=False, 
                   skip_frames=0, backend="opencv", model_name="emotion", log_only=False,
@@ -312,8 +131,7 @@ def process_video(input_path, output_path=None, log_path=None, show_preview=Fals
             static_image_mode=False,
             model_complexity=1,
             min_detection_confidence=0.5,
-            min_tracking_confidence=0.5,
-            enable_segmentation=False  # Disable segmentation to avoid errors
+            min_tracking_confidence=0.5
         )
     elif with_pose:
         logger.warning("Body pose estimation requested but mediapipe is not available. Install with: pip install mediapipe")
@@ -404,15 +222,14 @@ def process_video(input_path, output_path=None, log_path=None, show_preview=Fals
             skeletons_drawn = 0
             if with_pose and POSE_AVAILABLE:
                 # First try speaker-specific pose estimation
-                for speaker_id, face_data in list(speakers.items()):  # Use list() to create a copy of keys
+                for speaker_id, face_data in list(speakers.items()):
                     # Create pose estimator for this speaker if not exists
                     if speaker_id not in pose_estimators:
                         pose_estimators[speaker_id] = PoseEstimator(
                             static_image_mode=False,
                             model_complexity=1,
                             min_detection_confidence=0.5,
-                            min_tracking_confidence=0.5,
-                            enable_segmentation=False  # Disable segmentation to avoid errors
+                            min_tracking_confidence=0.5
                         )
                     
                     # Create a region of interest around the face for pose estimation
@@ -425,33 +242,19 @@ def process_video(input_path, output_path=None, log_path=None, show_preview=Fals
                     w = int(w)
                     h = int(h)
                     
-                    # Expand ROI to capture more of the body - MUCH LARGER TO INCLUDE LEGS
-                    # Convert all calculations to integers to avoid slice index errors
-                    roi_x = max(0, int(x - w*1.5))                   # Wider ROI to capture arms
-                    roi_y = max(0, int(y - h))                       # Start higher above the face
-                    roi_w = min(width - roi_x, int(w * 4))           # Make wider for better arm detection
-                    roi_h = min(height - roi_y, int(height - roi_y)) # Extend to bottom of frame to capture legs
-                    
-                    # Error fix: Ensure roi_h is calculating correctly (previous logic was redundant)
-                    roi_h = height - roi_y  # Simply extend to the bottom of the frame
-                    
-                    # Ensure all ROI values are integers
-                    roi_x, roi_y, roi_w, roi_h = int(roi_x), int(roi_y), int(roi_w), int(roi_h)
-                    
-                    # Check if ROI is too small or too large (use full frame for very large faces)
-                    if roi_w < 100 or roi_h < 200 or w > width/3:
-                        logger.debug(f"Frame {frame_count}: ROI inappropriate for {speaker_id}, using full frame")
-                        roi = original_frame.copy()
-                        roi_x, roi_y = 0, 0  # Reset ROI offset
-                    else:
-                        # Extract region of interest
-                        roi = original_frame[roi_y:roi_y+roi_h, roi_x:roi_x+roi_w]
-                        if roi.size == 0:  # Skip if ROI is empty
-                            logger.warning(f"Empty ROI for speaker {speaker_id}, skipping pose detection")
-                            continue
+                    # Expand ROI to capture more of the body
+                    roi_x = max(0, x - w)
+                    roi_y = max(0, y - h//2)
+                    roi_w = min(width - roi_x, w * 3)
+                    roi_h = min(height - roi_y, h * 4)  # Capture more body area below face
                     
                     # Process pose in the ROI
                     try:
+                        # Extract region of interest
+                        roi = original_frame[roi_y:roi_y+roi_h, roi_x:roi_x+roi_w]
+                        if roi.size == 0:  # Skip if ROI is empty
+                            continue
+                            
                         # Process the ROI for pose estimation
                         _, pose_data = pose_estimators[speaker_id].process_frame(roi)
                         
@@ -471,53 +274,25 @@ def process_video(input_path, output_path=None, log_path=None, show_preview=Fals
                             for i, landmark in enumerate(landmarks_copy):
                                 if landmark is not None:  # Some landmarks might be None
                                     try:
-                                        # Enhanced handling for non-numeric values
-                                        # First check for string values that can't be converted to float
-                                        if isinstance(landmark[0], str):
-                                            # Try to convert if it's a numeric string
-                                            try:
-                                                landmark[0] = float(landmark[0]) 
-                                            except ValueError:
-                                                # If it contains any non-numeric characters, skip this landmark
-                                                logger.debug(f"Frame {frame_count}: Invalid x-coordinate string: '{landmark[0]}'")
-                                                safe_landmarks.append(None)
-                                                continue
-                                        
-                                        if isinstance(landmark[1], str):
-                                            # Try to convert if it's a numeric string
-                                            try:
-                                                landmark[1] = float(landmark[1])
-                                            except ValueError:
-                                                # If it contains any non-numeric characters, skip this landmark
-                                                logger.debug(f"Frame {frame_count}: Invalid y-coordinate string: '{landmark[1]}'")
-                                                safe_landmarks.append(None)
-                                                continue
-                                        
-                                        # Handle common directional indicators or special values
-                                        for j in range(2):
-                                            if isinstance(landmark[j], str) and landmark[j].upper() in ['N', 'NONE', 'R', 'L', 'RIGHT', 'LEFT', 'M', 'MIDDLE', 'D', 'DOWN', 'U', 'UP']:
-                                                safe_landmarks.append(None)
-                                                continue
+                                        # Handle string values that can't be converted to float
+                                        # Check for common directional indicators or special values
+                                        if isinstance(landmark[0], str) and landmark[0].upper() in ['N', 'NONE', 'R', 'L', 'RIGHT', 'LEFT', 'M', 'MIDDLE']:
+                                            safe_landmarks.append(None)
+                                            continue
+                                        if isinstance(landmark[1], str) and landmark[1].upper() in ['N', 'NONE', 'R', 'L', 'RIGHT', 'LEFT', 'M', 'MIDDLE']:
+                                            safe_landmarks.append(None)
+                                            continue
                                             
                                         # Ensure landmark coordinates are numeric and adjust to original frame
                                         x_coord = float(landmark[0]) + roi_x
                                         y_coord = float(landmark[1]) + roi_y
-                                        
-                                        # Skip invalid coordinates
-                                        if not (0 <= x_coord < width and 0 <= y_coord < height):
-                                            safe_landmarks.append(None)
-                                            continue
-                                            
                                         safe_landmarks.append((x_coord, y_coord))
                                     except (TypeError, ValueError, IndexError) as e:
-                                        # More detailed error logging
-                                        if isinstance(landmark, (list, tuple)) and len(landmark) >= 2:
-                                            logger.warning(f"Frame {frame_count}: Invalid landmark format: {e}, values: {landmark[0]}, {landmark[1]}")
-                                        else:
-                                            logger.warning(f"Frame {frame_count}: Invalid landmark structure: {type(landmark)}")
+                                        logger.warning(f"Frame {frame_count}: Invalid landmark format: {e}")
                                         # Add None instead of skipping to maintain proper indexing
                                         safe_landmarks.append(None)
                                 else:
+                                    # Add None for missing landmarks
                                     safe_landmarks.append(None)
                             
                             # Fill any remaining indices to maintain full landmark array
@@ -525,55 +300,56 @@ def process_video(input_path, output_path=None, log_path=None, show_preview=Fals
                             while len(safe_landmarks) < 33:
                                 safe_landmarks.append(None)
                                 
-                            # Check if we have at least some minimal valid landmarks
-                            valid_count = sum(1 for lm in safe_landmarks if lm is not None)
-                            if valid_count < 5:  # Need at least a few points to draw anything meaningful
-                                logger.debug(f"Not enough valid landmarks ({valid_count}) for {speaker_id}")
-                                continue
-                                
                             # Replace landmarks with safe version
                             pose_data['landmarks'] = safe_landmarks
+                            
+                            # Debug landmark format - first few frames only
+                            if frame_count < 3:
+                                # Check for valid landmarks to help diagnose the issue
+                                valid_landmarks = [i for i, lm in enumerate(safe_landmarks) if lm is not None]
+                                logger.info(f"Frame {frame_count}: Speaker {speaker_id} has {len(valid_landmarks)}/{len(safe_landmarks)} valid landmarks")
+                                if valid_landmarks:
+                                    sample_idx = valid_landmarks[0]
+                                    logger.info(f"Sample landmark [{sample_idx}]: {safe_landmarks[sample_idx]}")
                         
                         # Store pose data for this speaker
                         speaker_pose_data[speaker_id] = pose_data
                         
+                        # Try to get better debug info about the pose data structure
+                        if frame_count < 2:
+                            try:
+                                if 'landmarks' in pose_data:
+                                    logger.info(f"Landmarks structure: Type={type(pose_data['landmarks'])}, Length={len(pose_data['landmarks'])}")
+                                    if isinstance(pose_data['landmarks'], list) and any(pose_data['landmarks']):
+                                        # Find first non-None landmark for inspection
+                                        first_valid = next((i for i, x in enumerate(pose_data['landmarks']) if x is not None), None)
+                                        if first_valid is not None:
+                                            logger.info(f"First valid landmark [{first_valid}]: {pose_data['landmarks'][first_valid]}")
+                                        else:
+                                            logger.warning("No valid landmarks found in list!")
+                            except Exception as e:
+                                logger.error(f"Error examining landmarks: {e}")
+                        
                         # Draw the pose skeleton and landmarks
-                        if 'landmarks' in pose_data and pose_data['landmarks'] and any(pose_data['landmarks']):
+                        if 'landmarks' in pose_data and pose_data['landmarks']:
                             color = speaker_colors.get(speaker_id, (255, 255, 255))
                             
                             # Force debug output for first few frames
                             if frame_count < 10:
                                 logger.info(f"Frame {frame_count}: Drawing pose for {speaker_id} with {len(pose_data['landmarks'])} landmarks")
                             
-                            # Draw skeleton connections for better visualization
-                            draw_pose_skeleton(frame, pose_data['landmarks'], color)
-                            
-                            # Add label for clearer speaker identification near the pose
-                            # Find a good position near the top of the skeleton
-                            top_landmarks = []
-                            for i, landmark in enumerate(pose_data['landmarks']):
-                                if landmark and i < 11:  # Check the face/upper body landmarks
-                                    top_landmarks.append(landmark)
-                                    
-                            if top_landmarks:
-                                # Use the average position of upper body landmarks
-                                avg_x = sum(l[0] for l in top_landmarks) // len(top_landmarks)
-                                avg_y = min(l[1] for l in top_landmarks) - 15  # Position above the top landmark
-                                
-                                # Draw text with speaker identity
-                                cv2.putText(
-                                    frame,
-                                    speaker_id,
-                                    (int(avg_x), int(avg_y)),
-                                    cv2.FONT_HERSHEY_SIMPLEX,
-                                    0.7,
-                                    color,
-                                    2
-                                )
-                            
-                            # Track if successful pose was drawn
-                            if 'landmarks' in pose_data and pose_data['landmarks'] and any(pose_data['landmarks']):
-                                skeletons_drawn += 1
+                            # Check for any non-None landmarks before attempting to draw
+                            valid_landmarks = [i for i, lm in enumerate(pose_data['landmarks']) if lm is not None]
+                            if valid_landmarks:
+                                try:
+                                    # Use direct drawing method that worked in the reference code
+                                    frame = draw_pose_skeleton(frame, pose_data['landmarks'], color, 2, POSE_CONNECTIONS)
+                                    skeletons_drawn += 1
+                                    logger.info(f"Frame {frame_count}: Drew skeleton for {speaker_id}")
+                                except Exception as e:
+                                    logger.warning(f"Frame {frame_count}: Error drawing skeleton: {str(e)}")
+                            else:
+                                logger.warning(f"Frame {frame_count}: No valid landmarks for {speaker_id}")
                     except Exception as e:
                         logger.warning(f"Frame {frame_count}: Error processing body pose for {speaker_id}: {str(e)}")
                         # Add detailed debug info for troubleshooting
@@ -591,141 +367,109 @@ def process_video(input_path, output_path=None, log_path=None, show_preview=Fals
                         for s_id, face_data in speakers.items():
                             region = face_data['region']
                             x, y, w, h = region['x'], region['y'], region['w'], region['h']
-                            face_center_x = x + w // 2
-                            face_center_y = y + h // 2
+                            face_center_x = int(x + w // 2)
+                            face_center_y = int(y + h // 2)
                             speaker_face_positions[s_id] = (face_center_x, face_center_y)
                             speaker_face_sizes[s_id] = (w, h)
-                            logger.info(f"Frame {frame_count}: Speaker {s_id} face center at ({face_center_x}, {face_center_y}), size {w}x{h}")
+                            logger.debug(f"Frame {frame_count}: Speaker {s_id} face center at ({face_center_x}, {face_center_y})")
                         
-                        # Process the whole frame with the global pose estimator - with error handling
-                        try:
-                            processed_frame, global_pose_data = global_pose_estimator.process_frame(original_frame.copy())
-                        except Exception as e:
-                            logger.warning(f"Frame {frame_count}: Global estimator failed: {str(e)}")
-                            logger.info("Creating fallback pose data and continuing...")
-                            global_pose_data = {"landmarks": [], "multi_person_landmarks": []}
+                        # Process the whole frame with the global pose estimator
+                        processed_frame, global_pose_data = global_pose_estimator.process_frame(original_frame.copy())
                         
-                        # If we still have speakers without poses, create artificial poses positioned exactly at faces
-                        remaining_speakers = [s for s in speakers if s not in speaker_pose_data]
+                        # Check if we got multi-person landmarks from the global estimator
+                        multi_person_landmarks = []
+                        
+                        # Try to extract landmarks from the global pose data if available
+                        # Main pose detection
+                        if 'landmarks' in global_pose_data and global_pose_data['landmarks']:
+                            # Convert directly to a list of 33 landmarks for our format
+                            landmarks_array = [None] * 33
+                            for idx, (name, data) in enumerate(global_pose_data['landmarks'].items()):
+                                landmarks_array[idx] = (data['x'], data['y'])
+                            multi_person_landmarks.append(landmarks_array)
+
+                        # Identify which speakers need poses
+                        remaining_speakers = [s_id for s_id in speakers.keys() if s_id not in speaker_pose_data]
+                        logger.debug(f"Frame {frame_count}: Need to assign poses to {len(remaining_speakers)} speakers")
+                        
+                        # Match poses to speakers by proximity to face
+                        if remaining_speakers and multi_person_landmarks:
+                            # For each remaining speaker, find the closest pose
+                            for speaker_id in remaining_speakers:
+                                if speaker_id in speaker_face_positions:
+                                    face_pos = speaker_face_positions[speaker_id]
+                                    closest_pose = None
+                                    min_distance = float('inf')
+                                    
+                                    for pose in multi_person_landmarks:
+                                        # Find the nose or another upper body landmark to measure distance
+                                        reference_point = None
+                                        for idx in [0, 11, 12]:  # Try nose, left shoulder, right shoulder
+                                            if pose[idx] is not None:
+                                                reference_point = pose[idx]
+                                                break
+                                        
+                                        if reference_point:
+                                            dist = ((reference_point[0] - face_pos[0])**2 + 
+                                                    (reference_point[1] - face_pos[1])**2)**0.5
+                                            if dist < min_distance:
+                                                min_distance = dist
+                                                closest_pose = pose
+                                    
+                                    # If we found a close pose, assign it to this speaker
+                                    if closest_pose and min_distance < width * 0.2:  # Distance threshold
+                                        # Need to create a proper data structure with both landmarks formats
+                                        closest_pose_data = {
+                                            'landmarks': closest_pose,
+                                            'landmarks_dict': global_pose_data.get('landmarks_dict', {})
+                                        }
+                                        
+                                        # Create pose data dictionary for this speaker
+                                        speaker_pose_data[speaker_id] = {
+                                            'landmarks': closest_pose,
+                                            'landmarks_dict': global_pose_data.get('landmarks_dict', {}),
+                                            'posture': global_pose_estimator._analyze_posture(closest_pose_data)
+                                        }
+                                        
+                                        # Draw this pose skeleton with the approach that worked
+                                        try:
+                                            frame = draw_pose_skeleton(frame, closest_pose, color, 2, POSE_CONNECTIONS)
+                                            skeletons_drawn += 1
+                                            logger.debug(f"Frame {frame_count}: Assigned pose to {speaker_id}")
+                                        except Exception as e:
+                                            logger.warning(f"Frame {frame_count}: Error drawing skeleton: {str(e)}")
+                        
+                        # If we still have speakers without poses, create artificial poses
+                        remaining_speakers = [s_id for s_id in speakers.keys() if s_id not in speaker_pose_data]
                         if remaining_speakers:
-                            logger.info(f"Frame {frame_count}: Creating artificial poses for {remaining_speakers}")
+                            logger.debug(f"Frame {frame_count}: Creating artificial poses for {len(remaining_speakers)} speakers")
                             
                             for speaker_id in remaining_speakers:
-                                # If speaker face position is available, create a simple pose at that location
                                 if speaker_id in speaker_face_positions:
                                     face_x, face_y = speaker_face_positions[speaker_id]
                                     face_w, face_h = speaker_face_sizes[speaker_id]
                                     
-                                    # Create basic pose landmarks centered at face position - ensure all values are integers
-                                    simple_landmarks = [None] * 33
+                                    # Create basic pose landmarks for visualization based on face position
+                                    face_x, face_y = face_x - face_w//2, face_y - face_h//2
+                                    simple_landmarks = create_fallback_pose(face_x, face_y, face_w, face_h)
                                     
-                                    # Basic face landmarks - convert all calculations to integers
-                                    simple_landmarks[0] = (int(face_x), int(face_y))  # Nose at face center
-                                    
-                                    # Left eye area
-                                    simple_landmarks[2] = (int(face_x - face_w*0.15), int(face_y - face_h*0.1))  # Left eye
-                                    
-                                    # Right eye area
-                                    simple_landmarks[5] = (int(face_x + face_w*0.15), int(face_y - face_h*0.1))  # Right eye
-                                    
-                                    # Shoulders
-                                    shoulder_y = int(face_y + face_h*0.6)
-                                    simple_landmarks[11] = (int(face_x - face_w*0.4), shoulder_y)  # Left shoulder
-                                    simple_landmarks[12] = (int(face_x + face_w*0.4), shoulder_y)  # Right shoulder
-                                    
-                                    # Hips - positioned lower
-                                    hip_y = int(shoulder_y + face_h*1.5)
-                                    simple_landmarks[23] = (int(face_x - face_w*0.3), hip_y)  # Left hip
-                                    simple_landmarks[24] = (int(face_x + face_w*0.3), hip_y)  # Right hip
-                                    
-                                    # Knees - positioned much lower
-                                    knee_y = int(hip_y + face_h*1.8)
-                                    knee_y = min(knee_y, int(height - face_h*1.0))  # Ensure within frame
-                                    simple_landmarks[25] = (int(face_x - face_w*0.35), knee_y)  # Left knee
-                                    simple_landmarks[26] = (int(face_x + face_w*0.35), knee_y)  # Right knee
-                                    
-                                    # Ankles - positioned at the bottom
-                                    ankle_y = int(knee_y + face_h*1.8)  
-                                    ankle_y = min(ankle_y, int(height - face_h*0.5))  # Ensure within frame
-                                    simple_landmarks[27] = (int(face_x - face_w*0.4), ankle_y)  # Left ankle
-                                    simple_landmarks[28] = (int(face_x + face_w*0.4), ankle_y)  # Right ankle
-                                    
-                                    # Instead of hardcoding a posture, create a dictionary representation
-                                    # that can be analyzed by the same posture detection algorithm
-                                    simple_landmarks_dict = {}
-                                    landmark_names = [
-                                        "NOSE", "LEFT_EYE_INNER", "LEFT_EYE", "LEFT_EYE_OUTER",
-                                        "RIGHT_EYE_INNER", "RIGHT_EYE", "RIGHT_EYE_OUTER",
-                                        "LEFT_EAR", "RIGHT_EAR", "MOUTH_LEFT", "MOUTH_RIGHT",
-                                        "LEFT_SHOULDER", "RIGHT_SHOULDER", "LEFT_ELBOW", "RIGHT_ELBOW",
-                                        "LEFT_WRIST", "RIGHT_WRIST", "LEFT_PINKY", "RIGHT_PINKY",
-                                        "LEFT_INDEX", "RIGHT_INDEX", "LEFT_THUMB", "RIGHT_THUMB",
-                                        "LEFT_HIP", "RIGHT_HIP", "LEFT_KNEE", "RIGHT_KNEE", 
-                                        "LEFT_ANKLE", "RIGHT_ANKLE", "LEFT_HEEL", "RIGHT_HEEL",
-                                        "LEFT_FOOT_INDEX", "RIGHT_FOOT_INDEX"
-                                    ]
-                                    
-                                    for i, landmark in enumerate(simple_landmarks):
-                                        if landmark is not None and i < len(landmark_names):
-                                            name = landmark_names[i]
-                                            simple_landmarks_dict[name] = {
-                                                "x": landmark[0],
-                                                "y": landmark[1],
-                                                "z": 0.0,  # Default z value
-                                                "visibility": 1.0  # Full visibility for artificial points
-                                            }
-                                    
-                                    # Use PoseEstimator's analyze posture method
-                                    simple_posture = None
-                                    if global_pose_estimator:
-                                        simple_posture = global_pose_estimator._analyze_posture(simple_landmarks_dict)
-                                    else:
-                                        # If no estimator, use a basic heuristic
-                                        if "NOSE" in simple_landmarks_dict and "LEFT_ANKLE" in simple_landmarks_dict:
-                                            # If large vertical distance between nose and ankle, likely standing
-                                            nose_y = simple_landmarks_dict["NOSE"]["y"]
-                                            ankle_y = simple_landmarks_dict["LEFT_ANKLE"]["y"]
-                                            vertical_distance = abs(ankle_y - nose_y)
-                                            is_sitting = vertical_distance < height * 0.4
-                                            simple_posture = {"position": "sitting" if is_sitting else "standing"}
-                                        else:
-                                            simple_posture = {"position": "unknown"}
-                                    
-                                    # Create basic pose data
-                                    simple_pose_data = {
-                                        "landmarks": simple_landmarks,
-                                        "posture": simple_posture
+                                    # Store pose data for artificial pose
+                                    speaker_pose_data[speaker_id] = {
+                                        'landmarks_dict': create_landmark_dict_from_list(simple_landmarks),
+                                        'posture': {'position': 'standing', 'arms': 'lowered'}  # Default values for artificial pose
                                     }
                                     
-                                    # IMPORTANT: Remove any previous pose data
-                                    if speaker_id in speaker_pose_data:
-                                        del speaker_pose_data[speaker_id]
-                                    
-                                    # Draw the simple pose
-                                    color = speaker_colors.get(speaker_id, (0, 0, 255))
-                                    draw_pose_skeleton(frame, simple_landmarks, color)
-                                    
-                                    # Add speaker ID text
-                                    cv2.putText(
-                                        frame,
-                                        f"{speaker_id}",
-                                        (int(face_x), int(face_y - face_h*0.2)),
-                                        cv2.FONT_HERSHEY_SIMPLEX,
-                                        0.7,
-                                        color,
-                                        2
-                                    )
-                                    
-                                    # Store pose data
-                                    speaker_pose_data[speaker_id] = simple_pose_data
-                                    skeletons_drawn += 1
-                                    
-                                    logger.info(f"Frame {frame_count}: Created basic pose placeholder for {speaker_id}")
-                            
+                                    # Draw skeleton with speaker color - using simpler approach
+                                    try:
+                                        frame = draw_pose_skeleton(frame, simple_landmarks, color, 2, POSE_CONNECTIONS)
+                                        skeletons_drawn += 1
+                                        logger.debug(f"Frame {frame_count}: Created artificial pose for {speaker_id}")
+                                    except Exception as e:
+                                        logger.warning(f"Frame {frame_count}: Error drawing skeleton: {str(e)}")
                     except Exception as e:
                         logger.warning(f"Frame {frame_count}: Error in global pose fallback: {str(e)}")
                         import traceback
-                        logger.debug(f"Global pose estimator error: {traceback.format_exc()}")
+                        logger.debug(f"Detailed error: {traceback.format_exc()}")
 
             # Log emotions and pose every 1 second
             current_second = int(frame_count / fps)
@@ -802,29 +546,10 @@ def process_video(input_path, output_path=None, log_path=None, show_preview=Fals
                     # Draw rectangle around face
                     cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
                     
-                    # Get pose information for this speaker if available
-                    pose_info = ""
-                    if with_pose and speaker_id in speaker_pose_data and 'posture' in speaker_pose_data[speaker_id]:
-                        posture = speaker_pose_data[speaker_id]['posture']
-                        position = posture.get('position', '').capitalize() or ''
-                        arms = posture.get('arms', '')
-                        
-                        # Format the arm position nicely
-                        if arms:
-                            arms = arms.replace('_', ' ').capitalize()
-                        
-                        # Add pose info if available
-                        if position and arms:
-                            pose_info = f" | {position}, {arms}"
-                        elif position:
-                            pose_info = f" | {position}"
-                        elif arms:
-                            pose_info = f" | Arms: {arms}"
-                    
-                    # Draw emotion label with speaker ID and pose info
+                    # Draw emotion label with speaker ID
                     cv2.putText(
                         frame, 
-                        f"{speaker_id}: {emotion}{pose_info}", 
+                        f"{speaker_id}: {emotion}", 
                         (x, y - 10), 
                         cv2.FONT_HERSHEY_SIMPLEX, 
                         0.9, 
@@ -840,7 +565,6 @@ def process_video(input_path, output_path=None, log_path=None, show_preview=Fals
                         # Default info if no pose data
                         position = "unknown"
                         arms = "unknown"
-                        confidence = 0.0
                         color = speaker_colors.get(possible_speaker_id, (255, 255, 255))
                         
                         # Get pose data if available for this speaker
@@ -850,14 +574,12 @@ def process_video(input_path, output_path=None, log_path=None, show_preview=Fals
                                 posture = pose_data["posture"]
                                 position = str(posture.get("position", "unknown") or "unknown")
                                 arms = str(posture.get("arms", "unknown") or "unknown")
-                                confidence = float(posture.get("confidence", 0.0) or 0.0)
                         
                         # Add speaker info text - always show for both possible speakers
                         text = f"{possible_speaker_id} - "
                         if possible_speaker_id in speakers:
                             if position != "unknown" or arms != "unknown":
-                                conf_text = f" (conf: {confidence:.2f})" if confidence > 0 else ""
-                                text += f"Posture: {position.capitalize()}{conf_text}, Arms: {arms.replace('_', ' ').capitalize()}"
+                                text += f"Posture: {position.capitalize()}, Arms: {arms.replace('_', ' ').capitalize()}"
                             else:
                                 text += f"No pose data available"
                         else:
@@ -924,24 +646,15 @@ def process_video(input_path, output_path=None, log_path=None, show_preview=Fals
         if progress_bar:
             progress_bar.close()
         
-        # Close all pose estimators with improved error handling
+        # Close all pose estimators
         if with_pose and POSE_AVAILABLE:
-            try:
-                # Close per-speaker estimators
-                for speaker_id, pose_estimator in pose_estimators.items():
-                    try:
-                        pose_estimator.close()
-                    except Exception as e:
-                        logger.warning(f"Error closing pose estimator for {speaker_id}: {str(e)}")
-                
-                # Close global estimator if it exists
-                if global_pose_estimator:
-                    try:
-                        global_pose_estimator.close()
-                    except Exception as e:
-                        logger.warning(f"Error closing global pose estimator: {str(e)}")
-            except Exception as e:
-                logger.warning(f"Error during pose estimator cleanup: {str(e)}")
+            # Close per-speaker estimators
+            for speaker_id, pose_estimator in pose_estimators.items():
+                pose_estimator.close()
+            
+            # Close global estimator if it exists
+            if global_pose_estimator:
+                global_pose_estimator.close()
             
         cap.release()
         if output_path and 'out' in locals():
