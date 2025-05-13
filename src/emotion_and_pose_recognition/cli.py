@@ -37,6 +37,10 @@ def main():
     parser.add_argument('--no-pose', action='store_true', help='Disable body pose estimation')
     parser.add_argument('--input-dir', help='Directory containing input video files')
     parser.add_argument('--output-dir', help='Directory to save output files')
+    parser.add_argument('--multi-speaker', '-m', action='store_true', 
+                        help='Enable multi-speaker tracking (up to 2 speakers) - default')
+    parser.add_argument('--single-speaker', action='store_true',
+                       help='Use single-speaker mode (disable multi-speaker tracking)')
     
     # Create subparsers for different commands
     subparsers = parser.add_subparsers(dest='command', help='Command to run')
@@ -54,6 +58,10 @@ def main():
     single_parser.add_argument('--log-only', action='store_true', 
                                help='Only generate log, skip video output for faster processing')
     single_parser.add_argument('--pose-log', help='Path to save pose data (JSON)', default=None)
+    single_parser.add_argument('--multi-speaker', '-m', action='store_true', 
+                              help='Enable multi-speaker tracking (up to 2 speakers) - default')
+    single_parser.add_argument('--single-speaker', action='store_true',
+                             help='Use single-speaker mode (disable multi-speaker tracking)')
     
     # 2. Batch processing command
     batch_parser = subparsers.add_parser('batch', help='Process multiple videos in a directory')
@@ -99,6 +107,12 @@ def main():
         args.with_pose = True
     if hasattr(args, 'no_pose') and args.no_pose:
         args.with_pose = False
+        
+    # Enable multi-speaker tracking by default, unless --single-speaker is specified
+    if not hasattr(args, 'multi_speaker'):
+        args.multi_speaker = True  # Default to multi-speaker support
+    if hasattr(args, 'single_speaker') and args.single_speaker:
+        args.multi_speaker = False
 
     # Check the command and run the corresponding function
     if args.command == 'process':
@@ -109,6 +123,7 @@ def main():
             
         logger.info(f"Processing video: {args.input}")
         logger.info(f"Body pose estimation: {'enabled' if args.with_pose else 'disabled'}")
+        logger.info(f"Multi-speaker tracking: {'enabled' if args.multi_speaker else 'disabled'}")
         
         # Process the video
         success = processor.process_video(

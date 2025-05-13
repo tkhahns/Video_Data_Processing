@@ -26,9 +26,6 @@ pydub = ">=0.25.1"
 ffmpeg-python = ">=0.2.0"
 
 # Emotion and pose recognition dependencies
-[tool.poetry.group.emotion]
-optional = true
-
 [tool.poetry.group.emotion.dependencies]
 numpy = ">=1.26.0"
 tensorflow = ">=2.13.0"

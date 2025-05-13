@@ -37,9 +37,11 @@ if [ "$1" == "--help" ] || [ "$1" == "-h" ]; then
     echo "  --output-dir DIR     Directory to save emotion analysis results (default: ./output/emotions)"
     echo "  --batch              Process all videos in input directory"
     echo "  --interactive        Force interactive video selection mode"
+    echo "  --single-speaker     Disable multi-speaker tracking (only track one person)"
     echo "  --debug              Enable debug logging"
     echo "  --help               Show this help message"
     echo ""
+    echo "By default, the script processes videos with pose estimation and multi-speaker tracking."
     echo "If run without arguments, the script will show an interactive video selection menu."
     exit 0
 fi
@@ -93,6 +95,19 @@ if [ "$NO_POSE_PRESENT" = false ]; then
     cmd_args+=("--with-pose")
 fi
 
+# Always use multi-speaker by default (unless --single-speaker is explicitly included)
+SINGLE_SPEAKER_PRESENT=false
+for arg in "${other_args[@]}"; do
+  if [ "$arg" == "--single-speaker" ]; then
+    SINGLE_SPEAKER_PRESENT=true
+    break
+  fi
+done
+
+if [ "$SINGLE_SPEAKER_PRESENT" = false ]; then
+    cmd_args+=("--multi-speaker")
+fi
+
 # Add other arguments
 for arg in "${other_args[@]}"; do
     cmd_args+=("$arg")
@@ -100,8 +115,8 @@ done
 
 # Use Poetry to run the script
 if [ ${#cmd_args[@]} -eq 0 ] && [ ${#other_args[@]} -eq 0 ]; then
-    echo "Entering interactive mode with pose estimation..."
-    poetry run python -m src.emotion_and_pose_recognition.cli --with-pose --interactive
+    echo "Entering interactive mode with pose estimation and multi-speaker tracking..."
+    poetry run python -m src.emotion_and_pose_recognition.cli --with-pose --multi-speaker --interactive
 else
     # Otherwise, pass all arguments to the script
     poetry run python -m src.emotion_and_pose_recognition.cli "${cmd_args[@]}"

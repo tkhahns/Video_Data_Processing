@@ -92,6 +92,14 @@ def check_dependencies():
         logger.warning("MediaPipe not installed. Body pose estimation will not be available.")
         logger.warning("Install with: pip install mediapipe")
         # Not considered a critical dependency
+        
+    # Check for SciPy (used for speaker tracking)
+    try:
+        import scipy
+        logger.info(f"SciPy version: {scipy.__version__}")
+    except ImportError:
+        logger.warning("SciPy not installed. Multi-speaker tracking may be less accurate.")
+        logger.warning("Install with: pip install scipy")
     
     # Optional: Check for tqdm for progress bars
     try:
@@ -249,3 +257,123 @@ def select_files_from_list(file_list):
     log_only = False
     
     return selected_files, log_only
+
+def calculate_iou(box1, box2):
+    """
+    Calculate the Intersection over Union (IoU) between two bounding boxes.
+    Each box is represented as [x, y, width, height].
+    
+    Args:
+        box1: First bounding box [x, y, width, height]
+        box2: Second bounding box [x, y, width, height]
+        
+    Returns:
+        float: IoU score between 0 and 1
+    """
+    # Convert to [x1, y1, x2, y2] format
+    box1_x1, box1_y1 = box1[0], box1[1]
+    box1_x2, box1_y2 = box1[0] + box1[2], box1[1] + box1[3]
+    
+    box2_x1, box2_y1 = box2[0], box2[1]
+    box2_x2, box2_y2 = box2[0] + box2[2], box2[1] + box2[3]
+    
+    # Calculate intersection area
+    x_left = max(box1_x1, box2_x1)
+    y_top = max(box1_y1, box2_y1)
+    x_right = min(box1_x2, box2_x2)
+    y_bottom = min(box1_y2, box2_y2)
+    
+    # Check if boxes overlap
+    if x_right < x_left or y_bottom < y_top:
+        return 0.0
+    
+    intersection_area = (x_right - x_left) * (y_bottom - y_top)
+    
+    # Calculate union area
+    box1_area = (box1_x2 - box1_x1) * (box1_y2 - box1_y1)
+    box2_area = (box2_x2 - box2_x1) * (box2_y2 - box2_y1)
+    union_area = box1_area + box2_area - intersection_area
+    
+    # Calculate IoU
+    iou = intersection_area / union_area if union_area > 0 else 0.0
+    
+    return iou
+
+def assign_speaker_ids(current_faces, previous_speakers=None, iou_threshold=0.3):
+    """
+    Assign consistent speaker IDs to detected faces based on their positions.
+    
+    Args:
+        current_faces: List of faces with 'region' data from DeepFace
+        previous_speakers: Dictionary mapping speaker_id to face data from previous frame
+        iou_threshold: Threshold for considering a face to be the same speaker
+        
+    Returns:
+        dict: Updated speakers dictionary mapping IDs to face data
+    """
+    if not current_faces:
+        return {}
+    
+    if not previous_speakers:
+        # First frame or no previous speakers, assign new IDs
+        speakers = {}
+        for i, face in enumerate(current_faces[:2]):  # Limit to max 2 speakers
+            speaker_id = f"speaker{i+1}"
+            face['speaker_id'] = speaker_id
+            speakers[speaker_id] = face
+        return speakers
+    
+    # We have previous speakers, try to match with current faces
+    speakers = {}
+    unassigned_faces = list(current_faces)
+    
+    # For each previous speaker, find the best matching face
+    for speaker_id, prev_face in previous_speakers.items():
+        prev_region = prev_face['region']
+        prev_box = [prev_region['x'], prev_region['y'], prev_region['w'], prev_region['h']]
+        
+        best_match = None
+        best_iou = iou_threshold  # Minimum threshold
+        best_idx = -1
+        
+        # Find the face with highest IoU
+        for i, face in enumerate(unassigned_faces):
+            region = face['region']
+            current_box = [region['x'], region['y'], region['w'], region['h']]
+            iou = calculate_iou(prev_box, current_box)
+            
+            if iou > best_iou:
+                best_match = face
+                best_iou = iou
+                best_idx = i
+        
+        if best_match:
+            # Assign the previous speaker_id to this face
+            best_match['speaker_id'] = speaker_id
+            speakers[speaker_id] = best_match
+            # Remove the assigned face
+            unassigned_faces.pop(best_idx)
+    
+    # Assign new IDs to any remaining unassigned faces (up to 2 total speakers)
+    existing_ids = set(speakers.keys())
+    available_ids = [f"speaker{i+1}" for i in range(2) if f"speaker{i+1}" not in existing_ids]
+    
+    for i, face in enumerate(unassigned_faces):
+        if i < len(available_ids):
+            speaker_id = available_ids[i]
+            face['speaker_id'] = speaker_id
+            speakers[speaker_id] = face
+    
+    return speakers
+
+def get_speaker_colors():
+    """
+    Returns consistent colors for each speaker for visualization purposes.
+    
+    Returns:
+        dict: Speaker colors mapping speaker IDs to BGR color tuples
+    """
+    return {
+        "speaker1": (0, 255, 0),   # Green for speaker 1 (BGR format)
+        "speaker2": (0, 0, 255)    # Red for speaker 2 (BGR format)
+    }
