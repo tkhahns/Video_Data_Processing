@@ -247,6 +247,10 @@ def main():
         help="Input audio file(s) or directory. If not provided, separated speech files will be used."
     )
     parser.add_argument(
+        "--input-dir",
+        help="Directory containing input audio files to process"
+    )
+    parser.add_argument(
         "--output-dir",
         default=str(DEFAULT_OUTPUT_DIR),
         help="Directory to save transcription files"
@@ -315,6 +319,16 @@ def main():
     if not utils.check_dependencies():
         logger.error("Missing dependencies. Please install required packages.")
         return 1
+    
+    # Handle input_dir if provided - find all audio files in that directory
+    if args.input_dir:
+        logger.info(f"Processing audio from input directory: {args.input_dir}")
+        # Add input_dir to the input arguments if provided
+        if os.path.exists(args.input_dir):
+            args.input = [args.input_dir]
+        else:
+            logger.error(f"Input directory not found: {args.input_dir}")
+            return 1
     
     # If use_separated_speech flag is set, override the default audio directory
     if args.use_separated_speech or not args.input:

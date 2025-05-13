@@ -7,13 +7,14 @@ readme = "README.md"
 packages = [{include = "src"}]  # Specify the source directory
 
 [tool.poetry.dependencies]
-python = ">=3.10"
+python = "~3.12"  # Specifically use Python 3.12.x
 requests = ">=2.28.1"
 typer = ">=0.9.0"
 colorama = ">=0.4.6"
 setuptools = ">=65.0.0"
 wheel = ">=0.38.0"
 gitpython = ">=3.1.30"  # For downloading models
+tqdm = ">=4.66.0"       # For progress bars, used by multiple modules
 
 # Group common dependencies without numpy conflicts
 [tool.poetry.group.common]
@@ -24,10 +25,7 @@ moviepy = ">=1.0.3"
 pydub = ">=0.25.1"
 ffmpeg-python = ">=0.2.0"
 
-# Emotion recognition dependencies
-[tool.poetry.group.emotion]
-optional = true
-
+# Emotion and pose recognition dependencies
 [tool.poetry.group.emotion.dependencies]
 numpy = ">=1.26.0"
 tensorflow = ">=2.13.0"
@@ -61,6 +59,7 @@ optional = true
 [tool.poetry.group.download.dependencies]
 msal = ">=1.22.0"
 selenium = ">=4.9.0"
+webdriver-manager = ">=3.8.6"  # Added for automatic ChromeDriver management
 
 [build-system]
 requires = ["poetry-core"]

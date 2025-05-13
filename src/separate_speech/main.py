@@ -53,6 +53,10 @@ def main():
         help="Input video file(s) or directory. If not provided, interactive selection will be used."
     )
     parser.add_argument(
+        "--input-dir",
+        help="Directory containing input video files to process"
+    )
+    parser.add_argument(
         "--output-dir",
         default=str(DEFAULT_OUTPUT_DIR),
         help="Directory to save separated speech files"
@@ -162,9 +166,20 @@ def main():
             logger.error("Set your token as environment variable HF_AUTH_TOKEN")
             return 1
     
+    # Handle input_dir if provided - find all video files in that directory
+    input_args = args.input
+    if args.input_dir:
+        logger.info(f"Processing videos from input directory: {args.input_dir}")
+        # Add input_dir to the input arguments if provided
+        if os.path.isdir(args.input_dir):
+            input_args = [args.input_dir]
+        else:
+            logger.error(f"Input directory not found: {args.input_dir}")
+            return 1
+    
     # Find all available video files
     all_video_files = extraction.find_video_files(
-        args.input, 
+        input_args, 
         args.recursive,
         DEFAULT_VIDEOS_DIR
     )

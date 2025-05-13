@@ -1,5 +1,5 @@
 """
-Command-line interface for emotion recognition from videos.
+Command-line interface for emotion and pose recognition from videos.
 """
 import os
 import sys
@@ -12,7 +12,7 @@ parent_dir = str(Path(__file__).resolve().parent.parent.parent)
 if parent_dir not in sys.path:
     sys.path.append(parent_dir)
 
-from src.emotion_recognition import processor, utils
+from src.emotion_and_pose_recognition import processor, utils
 
 # Set up logging
 try:
@@ -27,14 +27,20 @@ except ImportError:
     logger = logging.getLogger(__name__)
 
 def main():
-    """Main entry point for the emotion recognition CLI."""
+    """Main entry point for the emotion and pose recognition CLI."""
     # Create argument parser
-    parser = argparse.ArgumentParser(description='Facial Emotion Recognition from Video. '
+    parser = argparse.ArgumentParser(description='Facial Emotion and Body Pose Recognition from Video. '
                                                  'If no command is specified, runs in interactive mode.')
     
     # Add global options - these should be before the subparsers
     parser.add_argument('--with-pose', '-p', action='store_true', help='Enable body pose estimation (default)')
     parser.add_argument('--no-pose', action='store_true', help='Disable body pose estimation')
+    parser.add_argument('--input-dir', help='Directory containing input video files')
+    parser.add_argument('--output-dir', help='Directory to save output files')
+    parser.add_argument('--multi-speaker', '-m', action='store_true', 
+                        help='Enable multi-speaker tracking (up to 2 speakers) - default')
+    parser.add_argument('--single-speaker', action='store_true',
+                       help='Use single-speaker mode (disable multi-speaker tracking)')
     
     # Create subparsers for different commands
     subparsers = parser.add_subparsers(dest='command', help='Command to run')
@@ -52,6 +58,10 @@ def main():
     single_parser.add_argument('--log-only', action='store_true', 
                                help='Only generate log, skip video output for faster processing')
     single_parser.add_argument('--pose-log', help='Path to save pose data (JSON)', default=None)
+    single_parser.add_argument('--multi-speaker', '-m', action='store_true', 
+                              help='Enable multi-speaker tracking (up to 2 speakers) - default')
+    single_parser.add_argument('--single-speaker', action='store_true',
+                             help='Use single-speaker mode (disable multi-speaker tracking)')
     
     # 2. Batch processing command
     batch_parser = subparsers.add_parser('batch', help='Process multiple videos in a directory')
@@ -88,15 +98,21 @@ def main():
         logger.info("No command specified. Running in interactive mode.")
         # Create default arguments for interactive mode
         args.command = 'interactive'
-        args.input_dir = 'data/videos'
+        args.input_dir = args.input_dir or 'data/videos'  # Use provided input-dir or default
         args.recursive = False
-        args.output_dir = 'output/emotions'
+        args.output_dir = args.output_dir or 'output/emotions'  # Use provided output-dir or default
 
     # Set body pose estimation as default, unless --no-pose is specified
     if not hasattr(args, 'with_pose'):
         args.with_pose = True
     if hasattr(args, 'no_pose') and args.no_pose:
         args.with_pose = False
+        
+    # Enable multi-speaker tracking by default, unless --single-speaker is specified
+    if not hasattr(args, 'multi_speaker'):
+        args.multi_speaker = True  # Default to multi-speaker support
+    if hasattr(args, 'single_speaker') and args.single_speaker:
+        args.multi_speaker = False
 
     # Check the command and run the corresponding function
     if args.command == 'process':
@@ -107,6 +123,7 @@ def main():
             
         logger.info(f"Processing video: {args.input}")
         logger.info(f"Body pose estimation: {'enabled' if args.with_pose else 'disabled'}")
+        logger.info(f"Multi-speaker tracking: {'enabled' if args.multi_speaker else 'disabled'}")
         
         # Process the video
         success = processor.process_video(

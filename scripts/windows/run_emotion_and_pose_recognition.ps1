@@ -1,6 +1,6 @@
-# Video Data Processing Speech-to-Text
-Write-Host "=== Video Data Processing Speech-to-Text ===" -ForegroundColor Cyan
-Write-Host "This script transcribes speech audio files to text." -ForegroundColor Cyan
+# Video Data Processing Emotion and Pose Recognition
+Write-Host "=== Video Data Processing Emotion and Pose Recognition ===" -ForegroundColor Cyan
+Write-Host "This script analyzes emotions and body poses in video files." -ForegroundColor Cyan
 
 # Get the script's directory and project root
 $SCRIPT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -18,7 +18,7 @@ if (-not (Get-Command poetry -ErrorAction SilentlyContinue)) {
 } else {
     # Install dependencies using Poetry
     Write-Host "`n[1/2] Installing dependencies with Poetry..." -ForegroundColor Green
-    poetry install --with speech --with common
+    poetry install --with emotion --with common
     if ($LASTEXITCODE -ne 0) {
         Write-Host "Poetry installation had issues. Retrying with common dependencies only..." -ForegroundColor Yellow
         poetry install --with common
@@ -27,21 +27,17 @@ if (-not (Get-Command poetry -ErrorAction SilentlyContinue)) {
 
 # Help message if --help flag is provided
 if ($args.Count -gt 0 -and ($args[0] -eq "--help" -or $args[0] -eq "-h")) {
-    Write-Host "`nUsage: .\run_speech_to_text.ps1 [options] <audio_file(s)>" -ForegroundColor Yellow
+    Write-Host "`nUsage: .\run_emotion_recognition.ps1 [options] <video_file(s)>" -ForegroundColor Yellow
     Write-Host ""
     Write-Host "Options:" -ForegroundColor Yellow
-    Write-Host "  --input-dir DIR      Directory containing input audio files"
-    Write-Host "  --output-dir DIR     Directory to save transcription files (default: ./output/transcripts)"
-    Write-Host "  --model MODEL        Speech-to-text model to use (whisperx, xlsr)"
-    Write-Host "  --language LANG      Language code for transcription (default: en)"
-    Write-Host "  --output-format FMT  Output format: srt, txt, or both (default: srt)"
-    Write-Host "  --recursive          Process audio files in subdirectories recursively"
-    Write-Host "  --select             Force file selection prompt even when files are provided"
+    Write-Host "  --input-dir DIR      Directory containing input video files"
+    Write-Host "  --output-dir DIR     Directory to save emotion analysis results (default: ./output/emotions)"
+    Write-Host "  --batch              Process all videos in input directory"
+    Write-Host "  --interactive        Force interactive video selection mode"
     Write-Host "  --debug              Enable debug logging"
-    Write-Host "  --interactive        Force interactive audio selection mode"
     Write-Host "  --help               Show this help message"
     Write-Host ""
-    Write-Host "If run without arguments, the script will show an interactive audio selection menu."
+    Write-Host "If run without arguments, the script will show an interactive video selection menu."
     exit 0
 }
 
@@ -64,8 +60,8 @@ for ($i = 0; $i -lt $args.Count; $i++) {
     }
 }
 
-# Run the speech-to-text script
-Write-Host "`n[2/2] Running speech-to-text transcription..." -ForegroundColor Green
+# Run the emotion recognition script
+Write-Host "`n[2/2] Running emotion and pose recognition analysis..." -ForegroundColor Green
 
 # Build command based on input parameters
 $cmdArgs = @()
@@ -81,6 +77,19 @@ if ($outputDir) {
     $cmdArgs += "--output-dir", $outputDir
 }
 
+# Always add pose estimation by default (unless --no-pose is explicitly included)
+$NO_POSE_PRESENT = $false
+foreach ($arg in $otherArgs) {
+    if ($arg -eq "--no-pose") {
+        $NO_POSE_PRESENT = $true
+        break
+    }
+}
+
+if (-not $NO_POSE_PRESENT) {
+    $cmdArgs += "--with-pose"
+}
+
 # Add other arguments
 foreach ($arg in $otherArgs) {
     $cmdArgs += $arg
@@ -89,20 +98,20 @@ foreach ($arg in $otherArgs) {
 # Use Poetry to run the script
 try {
     if ($cmdArgs.Count -eq 0 -and $otherArgs.Count -eq 0) {
-        Write-Host "Entering interactive mode..." -ForegroundColor Cyan
-        poetry run python -m src.speech_to_text --interactive
+        Write-Host "Entering interactive mode with pose estimation..." -ForegroundColor Cyan
+        poetry run python -m src.emotion_recognition.cli --with-pose --interactive
     } else {
         # Otherwise, pass all arguments to the script
-        poetry run python -m src.speech_to_text $cmdArgs
+        poetry run python -m src.emotion_recognition.cli $cmdArgs
     }
 
     if ($LASTEXITCODE -eq 0) {
-        Write-Host "`nSpeech-to-text transcription process completed successfully." -ForegroundColor Green
+        Write-Host "`nEmotion and pose recognition analysis completed successfully." -ForegroundColor Green
     } else {
-        Write-Host "`nAn error occurred during the speech-to-text transcription process." -ForegroundColor Red
+        Write-Host "`nAn error occurred during emotion and pose recognition analysis." -ForegroundColor Red
         exit $LASTEXITCODE
     }
 } catch {
-    Write-Host "`nAn exception occurred during speech-to-text: $_" -ForegroundColor Red
+    Write-Host "`nAn exception occurred during emotion and pose recognition: $_" -ForegroundColor Red
     exit 1
 }

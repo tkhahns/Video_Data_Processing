@@ -3,8 +3,8 @@
 # Exit on error
 set -e
 
-echo "=== Video Data Processing Speech Separation ==="
-echo "This script extracts and isolates speech from video files."
+echo "=== Video Data Processing Emotion and Pose Recognition ==="
+echo "This script analyzes emotions and body poses in video files."
 
 # Get the script's directory and project root
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
@@ -22,7 +22,7 @@ if ! command -v poetry &> /dev/null; then
 else
     # Install dependencies using Poetry
     echo -e "\n[1/2] Installing dependencies with Poetry..."
-    poetry install --with speech --with common || {
+    poetry install --with emotion --with common || {
         echo "Poetry installation had issues. Retrying with common dependencies only..."
         poetry install --with common
     }
@@ -30,18 +30,18 @@ fi
 
 # Help message if --help flag is provided
 if [ "$1" == "--help" ] || [ "$1" == "-h" ]; then
-    echo -e "\nUsage: ./run_separate_speech.sh [options] <video_file(s)>"
+    echo -e "\nUsage: ./run_emotion_and_pose_recognition.sh [options] <video_file(s)>"
     echo ""
     echo "Options:"
-    echo "  --input-dir DIR      Directory containing input video files (default: ./data/videos)"
-    echo "  --output-dir DIR     Directory to save separated speech files (default: ./output/separated_speech)"
-    echo "  --model MODEL        Speech separation model to use (sepformer, conv-tasnet)" 
-    echo "  --file-type TYPE     Output file format: wav (1), mp3 (2), or both (3) (default: mp3)"
-    echo "  --recursive          Process video files in subdirectories recursively"
-    echo "  --debug              Enable debug logging"
+    echo "  --input-dir DIR      Directory containing input video files"
+    echo "  --output-dir DIR     Directory to save emotion analysis results (default: ./output/emotions)"
+    echo "  --batch              Process all videos in input directory"
     echo "  --interactive        Force interactive video selection mode"
+    echo "  --single-speaker     Disable multi-speaker tracking (only track one person)"
+    echo "  --debug              Enable debug logging"
     echo "  --help               Show this help message"
     echo ""
+    echo "By default, the script processes videos with pose estimation and multi-speaker tracking."
     echo "If run without arguments, the script will show an interactive video selection menu."
     exit 0
 fi
@@ -65,8 +65,8 @@ while [ $i -le $# ]; do
     i=$((i+1))
 done
 
-# Run the speech separation script
-echo -e "\n[2/2] Running speech separation..."
+# Run the emotion and pose recognition script
+echo -e "\n[2/2] Running emotion and pose recognition analysis..."
 
 # Build command based on input parameters
 cmd_args=()
@@ -82,6 +82,32 @@ if [ -n "$output_dir" ]; then
     cmd_args+=("--output-dir" "$output_dir")
 fi
 
+# Always add pose estimation by default (unless --no-pose is explicitly included)
+NO_POSE_PRESENT=false
+for arg in "${other_args[@]}"; do
+  if [ "$arg" == "--no-pose" ]; then
+    NO_POSE_PRESENT=true
+    break
+  fi
+done
+
+if [ "$NO_POSE_PRESENT" = false ]; then
+    cmd_args+=("--with-pose")
+fi
+
+# Always use multi-speaker by default (unless --single-speaker is explicitly included)
+SINGLE_SPEAKER_PRESENT=false
+for arg in "${other_args[@]}"; do
+  if [ "$arg" == "--single-speaker" ]; then
+    SINGLE_SPEAKER_PRESENT=true
+    break
+  fi
+done
+
+if [ "$SINGLE_SPEAKER_PRESENT" = false ]; then
+    cmd_args+=("--multi-speaker")
+fi
+
 # Add other arguments
 for arg in "${other_args[@]}"; do
     cmd_args+=("$arg")
@@ -89,16 +115,16 @@ done
 
 # Use Poetry to run the script
 if [ ${#cmd_args[@]} -eq 0 ] && [ ${#other_args[@]} -eq 0 ]; then
-    echo "Entering interactive mode..."
-    poetry run python -m src.separate_speech --interactive
+    echo "Entering interactive mode with pose estimation and multi-speaker tracking..."
+    poetry run python -m src.emotion_and_pose_recognition.cli --with-pose --multi-speaker --interactive
 else
     # Otherwise, pass all arguments to the script
-    poetry run python -m src.separate_speech "${cmd_args[@]}"
+    poetry run python -m src.emotion_and_pose_recognition.cli "${cmd_args[@]}"
 fi
 
 if [ $? -eq 0 ]; then
-    echo -e "\nSpeech separation process completed successfully."
+    echo -e "\nEmotion and pose recognition analysis completed successfully."
 else
-    echo -e "\nAn error occurred during the speech separation process."
+    echo -e "\nAn error occurred during emotion and pose recognition analysis."
     exit 1
 fi

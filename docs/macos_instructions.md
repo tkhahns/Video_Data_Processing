@@ -1,35 +1,58 @@
-## Video Data Processing Setup Instructions
+# Video Data Processing - macOS Setup Instructions
 
-These instructions will help you set up the environment for the Video Data Processing application on macOS using Python 3.12.10 managed by pyenv.
+These instructions will help you set up the environment for the Video Data Processing application on macOS.
 
 ---
 
 ## Prerequisites
 
-Ensure you have **pyenv** installed and Python 3.12.10 set as your global interpreter:
+### Python 3.12 (Required)
+
+This project requires Python 3.12 specifically:
 
 ```bash
-# Install pyenv (if not already installed)
+# Check Python version
+python3 --version
+
+# Install Python 3.12 using Homebrew
 brew update
-brew install pyenv
+brew install python@3.12
 
-# Initialize pyenv in your shell (if not already configured)
-# Add to your ~/.zprofile:
-export PYENV_ROOT="$HOME/.pyenv"
-export PATH="$PYENV_ROOT/bin:$PATH"
-eval "$(pyenv init --path)"
+# Make Python 3.12 the default
+echo 'alias python=python3.12' >> ~/.zshrc
+echo 'alias python3=python3.12' >> ~/.zshrc
+source ~/.zshrc
 
-# Add to your ~/.zshrc:
-eval "$(pyenv init -)"
+# Verify Python version
+python --version  # Should show Python 3.12.x
+```
 
-# Install and set Python 3.12.10 globally
-pyenv install --skip-existing 3.12.10
-pyenv global 3.12.10
+### Poetry for Dependency Management
 
-# Verify the Python version
-python --version    # → Python 3.12.10
-python3 --version   # → Python 3.12.10
-``` 
+This project uses Poetry for dependency management:
+
+```bash
+# Install Poetry
+curl -sSL https://install.python-poetry.org | python3 -
+
+# Add Poetry to your PATH (add to ~/.zshrc or ~/.bashrc)
+export PATH="$HOME/.local/bin:$PATH"
+
+# Verify Poetry installation
+poetry --version
+
+# Configure Poetry to use Python 3.12
+poetry env use python3.12
+```
+
+### FFmpeg
+
+FFmpeg is required for audio and video processing:
+
+```bash
+# Install using Homebrew
+brew install ffmpeg
+```
 
 ---
 
@@ -42,419 +65,220 @@ git clone https://github.com/tkhahns/Video_Data_Processing.git
 cd Video_Data_Processing
 ```
 
-### 2. Create and activate a virtual environment
+### 2. Install dependencies with Poetry
 
 ```bash
-# Create the virtual environment using the specified Python
-python -m venv .venv
+# Configure Poetry to use Python 3.12 for this project
+poetry env use python3.12
 
-# Activate the virtual environment
-source .venv/bin/activate
-```  
+# Install main dependencies
+poetry install
 
-### 3. Update pip and install dependencies
-
-```bash
-# Update pip to the latest version
-pip install --upgrade pip
-
-# Install project dependencies
-pip install -r requirements.txt
-
-# Install huggingface-hub
-pip install huggingface-hub
+# Install all feature groups
+poetry install --with common
+poetry install --with speech
+poetry install --with emotion
+poetry install --with download
 ```
 
----
-
-## Fetch all models
-
-You can download the required models using either of these methods:
-
-### Option 1: Using the automated script (recommended)
+### 3. Set up execution permissions
 
 ```bash
-# Make the script executable
-chmod +x run_download_models.sh
-
-# Run the script
-./run_download_models.sh
-```
-
-This script automatically:
-- Creates and activates the virtual environment
-- Updates pip and installs dependencies
-- Creates the models directory
-- Downloads all required models
-
-### Option 2: Running as a module
-
-```bash
-# With virtual environment activated
-python -m src.download_models
-```
-
-### Option 3: Additional options
-
-```bash
-# Download only specific model types
-python -m src.download_models --model-types audio video
-
-# Force re-download of existing models
-python -m src.download_models --force
-
-# Preview what would be downloaded without downloading
-python -m src.download_models --dry-run
-```
-
----
-
-## Complete Video Processing Pipeline
-
-You can run the complete video processing pipeline using a single script. This will perform all processing steps in sequence:
-
-1. Download videos from SharePoint
-2. Process videos in parallel:
-   - Speech separation followed by speech-to-text
-   - Emotion and body pose recognition
-
-### Running the complete pipeline
-
-```bash
-# Make the script executable (first time only)
-chmod +x run_pipeline.sh
-
-# Run the pipeline with default settings
-./run_pipeline.sh
-
-# Or specify SharePoint URL to download videos from
-./run_pipeline.sh --url "https://your-sharepoint-site.com/folder-with-videos"
-```
-
-This will:
-1. Create a timestamped directory for all processing results
-2. Download videos (or use existing ones if download fails)
-3. Process speech separation in parallel with emotion recognition
-4. Run speech-to-text on the separated speech
-5. Provide a summary of results when complete
-
-All component scripts are located in the `scripts/macos/` directory and can also be run individually:
-
-```bash
-# Individual scripts
-./scripts/macos/run_download_videos.sh
-./scripts/macos/run_separate_speech.sh
-./scripts/macos/run_speech_to_text.sh
-./scripts/macos/run_emotion_recognition.sh
-```
-
----
-
-## Download Videos from SharePoint
-
-You can download videos from SharePoint using the included browser automation tool:
-
-### Option 1: Using the convenience script (recommended)
-
-```bash
-# Make the script executable (first time only)
+# Make all scripts executable
+chmod +x run_all.sh
 chmod +x scripts/macos/run_download_videos.sh
-
-# Run the script with no arguments (you'll be prompted for the URL)
-./scripts/macos/run_download_videos.sh
-
-# Or specify the URL directly
-./scripts/macos/run_download_videos.sh --url "https://your-sharepoint-site.com/folder-with-videos"
-
-# Additional options:
-./scripts/macos/run_download_videos.sh --url "https://your-sharepoint-site.com/folder-with-videos" --output-dir "./my-videos"
-./scripts/macos/run_download_videos.sh --list-only
-./scripts/macos/run_download_videos.sh --debug
-```
-
-This script automatically:
-- Activates the virtual environment
-- Prompts for SharePoint URL if not provided
-- Handles errors gracefully
-
-### Option 2: Running as a module
-
-```bash
-# Using Python module syntax
-python -m src.download_videos --url "https://your-sharepoint-site.com/folder-with-videos"
-
-# Shorthand version
-python src/download_videos --url "https://your-sharepoint-site.com/folder-with-videos"
-
-# Additional options
-python src/download_videos --url "https://your-sharepoint-site.com/folder-with-videos" --output-dir "./my-videos"
-python src/download_videos --list-only --url "https://your-sharepoint-site.com/folder-with-videos"
-python src/download_videos --debug --url "https://your-sharepoint-site.com/folder-with-videos"
-```
-
-### Option 3: Running the Python script directly
-
-```bash
-# Basic usage
-python src/download_videos/main.py --url "https://your-sharepoint-site.com/folder-with-videos"
-
-# Save to a specific directory
-python src/download_videos/main.py --url "https://your-sharepoint-site.com/folder-with-videos" --output-dir "./my-videos"
-
-# Just list files without downloading
-python src/download_videos/main.py --url "https://your-sharepoint-site.com/folder-with-videos" --list-only
-
-# Enable debug mode for troubleshooting
-python src/download_videos/main.py --url "https://your-sharepoint-site.com/folder-with-videos" --debug
-```
-
-This will:
-1. Open a browser window for SharePoint authentication
-2. Find all available files in the specified folder
-3. Present you with a list of files to choose from
-4. Download your selected files
-
-**Note:** The tool requires authentication to SharePoint. You'll need to sign in through the browser window that opens.
-
----
-
-## Extract Speech from Videos
-
-You can extract and separate speech from video files using the provided speech separation tool:
-
-### Option 1: Using the convenience script (recommended)
-
-```bash
-# Make the script executable (first time only)
 chmod +x scripts/macos/run_separate_speech.sh
-
-# Run the script with no arguments (interactive mode)
-./scripts/macos/run_separate_speech.sh
-
-# Or process specific video files
-./scripts/macos/run_separate_speech.sh path/to/video.mp4
-
-# Additional options:
-./scripts/macos/run_separate_speech.sh --output-dir "./my-speech-output" path/to/video.mp4
-./scripts/macos/run_separate_speech.sh --file-type wav  # Choose output format: wav, mp3, or both
-./scripts/macos/run_separate_speech.sh --model sepformer
-./scripts/macos/run_separate_speech.sh --detect-dialogues  # Enable dialogue detection
+chmod +x scripts/macos/run_speech_to_text.sh
+chmod +x scripts/macos/run_emotion_recognition.sh
 ```
-
-This script automatically:
-- Activates the virtual environment
-- Handles dependencies
-- Processes videos through the speech separation model
-
-### Option 2: Running as a module
-
-```bash
-# Using Python module syntax (interactive mode)
-python -m src.separate_speech --interactive
-
-# Process specific video files
-python -m src.separate_speech path/to/video.mp4
-
-# Additional options
-python -m src.separate_speech path/to/video.mp4 --output-dir "./my-speech-output"
-python -m src.separate_speech path/to/video.mp4 --file-type wav
-python -m src.separate_speech path/to/video.mp4 --detect-dialogues  # Enable dialogue detection
-python -m src.separate_speech path/to/video.mp4 --skip-no-speech  # Skip files without speech
-```
-
-### Option 3: Running the Python script directly
-
-```bash
-# Basic usage
-python src/separate_speech/__main__.py path/to/video.mp4
-
-# Advanced options
-python src/separate_speech/__main__.py --output-dir "./my-speech-output" --file-type both path/to/video.mp4
-python src/separate_speech/__main__.py --model sepformer --chunk-size 5 path/to/video.mp4
-python src/separate_speech/__main__.py --detect-dialogues path/to/video.mp4  # Enable dialogue detection
-```
-
-The tool will:
-1. Extract audio from the video files
-2. Process through speech separation model
-3. Save the isolated speech as audio files (WAV and/or MP3)
-4. Optionally detect and extract dialogues from different speakers (with --detect-dialogues)
-
-**Note:** 
-- The first run will download the speech separation model (approximately 1GB), which may take some time depending on your internet connection.
-- For dialogue detection, SpeechBrain will be installed automatically. This feature identifies different speakers and saves their speech as separate audio files.
-
-### Dialogue Detection Prerequisites
-
-To use dialogue detection, you need:
-
-```bash
-# Install SpeechBrain and associated dependencies
-pip install speechbrain scikit-learn
-```
-
-If you encounter issues with dialogue detection:
-- Ensure output directories have proper permissions
-- Check that ffmpeg is properly installed for audio format conversions
-- For troubleshooting specific errors, review the log output
 
 ---
 
-## Install ffmpeg
+## Complete Processing Pipeline
 
-ffmpeg is required for audio processing and conversion:
+The `run_all.sh` script provides a complete end-to-end pipeline that:
+1. Downloads videos from SharePoint
+2. Extracts speech from the videos
+3. Transcribes the speech to text
+4. Analyzes emotions and body poses in the videos
+
+All outputs are organized in timestamped directories for easy tracking.
+
+### Running the Complete Pipeline
 
 ```bash
-# Install ffmpeg using Homebrew
-brew install ffmpeg
+# Run the pipeline (will prompt for SharePoint URL)
+./run_all.sh
+
+# Or specify the SharePoint URL directly
+./run_all.sh --url "https://your-sharepoint-site.com/folder-with-videos"
 ```
 
-You can also install the Python wrapper for ffmpeg:
+### Pipeline Outputs
+
+The pipeline creates the following directory structure:
+- `data/downloads_TIMESTAMP/`: Original downloaded videos
+- `output/pipeline_results_TIMESTAMP/`: Processing results
+  - `speech/`: Extracted speech audio files
+  - `transcripts/`: Text transcription files
+  - `emotions_and_pose/`: Emotion and body pose analysis
+
+---
+
+## Individual Components
+
+Each component can also be run separately if you need to process only specific steps.
+
+### 1. Download Videos from SharePoint
+
+The download module now uses a manual approach where you interact with SharePoint in the browser:
 
 ```bash
-pip install ffmpeg-python pydub
+# Run with Poetry (interactive mode)
+poetry run scripts/macos/run_download_videos.sh
+
+# Specify URL directly
+poetry run scripts/macos/run_download_videos.sh --url "https://your-sharepoint-site.com/folder-with-videos"
+
+# Additional options
+poetry run scripts/macos/run_download_videos.sh --url "URL" --output-dir "./my-videos"
+poetry run scripts/macos/run_download_videos.sh --list-only
+poetry run scripts/macos/run_download_videos.sh --debug
 ```
 
 This will:
-1. Install the ffmpeg command-line tools
-2. Install Python wrappers for easier integration
+1. Open a browser window with the SharePoint site
+2. Display all available files 
+3. Provide instructions for manual downloading:
+   - For individual files: right-click and select "Download"
+   - For multiple files: select files using checkboxes and download as ZIP
+4. Monitor your system's Downloads folder for:
+   - Downloaded video files - moved automatically to the output directory
+   - ZIP files - extracted automatically to get video files, then ZIP is deleted
+5. Automatically complete when all downloads are processed (no need to stop manually)
+6. You can press Ctrl+C at any time to stop the monitoring and continue the pipeline
+
+The process will automatically proceed to the next step in the pipeline once downloads are complete.
+
+### 2. Extract Speech from Videos
+
+```bash
+# Interactive mode
+poetry run scripts/macos/run_separate_speech.sh
+
+# With specific input and output directories
+poetry run scripts/macos/run_separate_speech.sh --input-dir "./my-videos" --output-dir "./my-speech"
+
+# Additional options
+poetry run scripts/macos/run_separate_speech.sh --file-type wav  # Output format: wav, mp3, or both
+poetry run scripts/macos/run_separate_speech.sh --model sepformer  # Separation model
+```
+
+### 3. Transcribe Speech to Text
+
+```bash
+# Interactive mode
+poetry run scripts/macos/run_speech_to_text.sh
+
+# With specific input and output directories
+poetry run scripts/macos/run_speech_to_text.sh --input-dir "./my-speech" --output-dir "./my-transcripts"
+
+# Additional options
+poetry run scripts/macos/run_speech_to_text.sh --language fr  # Language (default: en)
+poetry run scripts/macos/run_speech_to_text.sh --output-format txt  # Output format: srt, txt, or both
+poetry run scripts/macos/run_speech_to_text.sh --model whisperx  # Transcription model
+```
+
+### 4. Analyze Emotions and Body Poses
+
+```bash
+# Interactive mode
+poetry run scripts/macos/run_emotion_and_pose_recognition.sh
+
+# With specific input and output directories
+poetry run scripts/macos/run_emotion_and_pose_recognition.sh --input-dir "./my-videos" --output-dir "./my-emotions"
+
+# Emotion and pose recognition includes pose estimation by default
+# To disable pose estimation (not recommended)
+poetry run scripts/macos/run_emotion_and_pose_recognition.sh --no-pose
+```
 
 ---
 
-## Transcribe Speech to Text
+## Advanced Usage
 
-You can transcribe speech audio files to text using the provided speech-to-text transcription tool:
+### Running as Python Modules
 
-### Option 1: Using the convenience script (recommended)
-
-```bash
-# Make the script executable (first time only)
-chmod +x scripts/macos/run_speech_to_text.sh
-
-# Run the script with no arguments (interactive mode)
-./scripts/macos/run_speech_to_text.sh
-
-# Or process specific audio files
-./scripts/macos/run_speech_to_text.sh path/to/audio.wav
-
-# Additional options:
-./scripts/macos/run_speech_to_text.sh --output-dir "./my-transcripts" path/to/audio.mp3
-./scripts/macos/run_speech_to_text.sh --language fr  # Specify language (default: en)
-./scripts/macos/run_speech_to_text.sh --model whisperx  # Choose model (whisperx, xlsr)
-./scripts/macos/run_speech_to_text.sh --select  # Force file selection even with files specified
-```
-
-This script automatically:
-- Activates the virtual environment
-- Installs required dependencies
-- Processes audio files through the speech-to-text model
-
-When run in interactive mode, the tool will:
-1. Display a list of available audio files
-2. Allow you to select specific files by number (e.g., "1,3,5") or choose "all"
-3. Prompt you to choose an output format (SRT subtitles, TXT with timestamps, or both)
-4. Process the selected files with the chosen settings
-
-### Option 2: Running as a module
+Each component can be run directly as a Python module:
 
 ```bash
-# Using Python module syntax (interactive mode)
-python -m src.speech_to_text --interactive
+# Download videos
+poetry run python -m src.download_videos --url "https://sharepoint-url.com" --output-dir "./my-videos"
 
-# Process specific audio files
-python -m src.speech_to_text path/to/audio.mp3
+# Speech separation
+poetry run python -m src.separate_speech --input-dir "./my-videos" --output-dir "./my-speech"
 
-# Additional options
-python -m src.speech_to_text path/to/audio.wav --output-dir "./my-transcripts"
-python -m src.speech_to_text path/to/audio.mp3 --language es
-python -m src.speech_to_text --output-format txt  # Options: srt, txt, both
+# Speech to text
+poetry run python -m src.speech_to_text --input-dir "./my-speech" --output-dir "./my-transcripts"
+
+# Emotion and pose recognition
+poetry run python -m src.emotion_and_pose_recognition.cli --input-dir "./my-videos" --output-dir "./my-emotions" --with-pose
 ```
 
-### Option 3: Running the Python script directly
+### Customizing the Pipeline
 
-```bash
-# Basic usage
-python src/speech_to_text/__main__.py path/to/audio.mp3
+The complete pipeline creates a unique timestamped directory for each run, making it easy to track different processing sessions. If you need to customize the pipeline:
 
-# Advanced options
-python src/speech_to_text/__main__.py --output-dir "./my-transcripts" --language fr path/to/audio.mp3
-python src/speech_to_text/__main__.py --model xlsr --recursive path/to/audio/folder
-python src/speech_to_text/__main__.py --output-format both  # Save as both SRT and TXT
-```
-
-The tool will:
-1. Process the audio files through the selected speech recognition model
-2. Create timestamped transcriptions of the spoken content
-3. Save the results as SRT subtitles (.srt), plain text with timestamps (.txt), or both formats
-
-**Note:** The first run will download the speech recognition model, which may take some time depending on your internet connection. If using a CPU-only system, the tool will automatically fall back to float32 precision for better compatibility.
+1. Edit the `run_all.sh` script to modify the directory structure or processing steps
+2. Use environment variables to configure specific components
+3. Create your own pipeline script based on the existing ones
 
 ---
 
-## Detect Emotions and Body Poses in Videos
+## Troubleshooting
 
-You can detect and analyze facial emotions and body poses in videos using the provided emotion recognition tool:
+### Missing Dependencies
 
-### Option 1: Using the convenience script (recommended)
-
-```bash
-# Make the script executable (first time only)
-chmod +x scripts/macos/run_emotion_recognition.sh
-
-# Run the script with no arguments (interactive mode)
-./scripts/macos/run_emotion_recognition.sh
-
-# Or process specific video files
-./scripts/macos/run_emotion_recognition.sh process path/to/video.mp4
-
-# Additional options:
-./scripts/macos/run_emotion_recognition.sh process path/to/video.mp4 --output path/to/output.mp4
-./scripts/macos/run_emotion_recognition.sh batch input/directory output/directory
-./scripts/macos/run_emotion_recognition.sh interactive --input_dir path/to/videos
-./scripts/macos/run_emotion_recognition.sh check
-./scripts/macos/run_emotion_recognition.sh --no-pose  # Disable body pose estimation
-```
-
-This script automatically:
-- Activates the virtual environment
-- Installs required dependencies (DeepFace, TensorFlow, MediaPipe, etc.)
-- Creates the default directories if they don't exist
-- Processes videos through the emotion recognition and pose estimation models
-
-When run in interactive mode, the tool will:
-1. Display a list of available video files (showing only filenames for clarity)
-2. Allow you to select specific files by number (e.g., "1,3,5") or choose "all"
-3. Prompt you to choose an output format (annotated video + log, or log only)
-4. Process the selected files with the chosen settings
-
-### Option 2: Running as a module
+If you encounter missing dependency errors:
 
 ```bash
-# Using Python module syntax (interactive mode)
-python -m src.emotion_recognition.cli
+# Update Poetry dependencies
+poetry update
 
-# Process a single video file
-python -m src.emotion_recognition.cli process path/to/video.mp4
-
-# Disable body pose estimation
-python -m src.emotion_recognition.cli --no-pose process path/to/video.mp4
-
-# Additional options
-python -m src.emotion_recognition.cli process path/to/video.mp4 --output path/to/output.mp4
-python -m src.emotion_recognition.cli batch input/directory output/directory
-python -m src.emotion_recognition.cli check
+# Ensure all feature groups are installed
+poetry install --with common --with speech --with emotion --with download
 ```
 
-The tool will:
-1. Detect faces in each frame of the video
-2. Analyze emotions (happy, sad, angry, etc.) for each detected face
-3. Detect and track body poses using MediaPipe
-4. Generate an annotated video with emotion labels and pose landmarks
-5. Create a CSV log file with emotion and pose details by timestamp
-6. Create a JSON file with detailed pose data including joint positions and angles
+### SharePoint Download Issues
 
-**Note:** 
-- Default input directory: `data/videos/`
-- Default output directory: `output/emotions/`
-- Body pose estimation is enabled by default and can be disabled with the `--no-pose` flag
-- The tool uses DeepFace for emotion recognition and MediaPipe for pose estimation
+For SharePoint download problems:
+
+1. Check that the URL points directly to a folder with videos
+2. Examine the `sharepoint_page.png` screenshot created during download attempts
+3. Try running with `--debug` for more detailed logging
+4. Ensure your SharePoint credentials are correct
+
+### Audio Processing Issues
+
+If speech separation or transcription fails:
+
+1. Verify that FFmpeg is properly installed: `ffmpeg -version`
+2. Check that the input video files have valid audio tracks
+3. Try processing a different video file to isolate the issue
+
+### Emotion Recognition Issues
+
+For emotion detection problems:
+
+1. Ensure TensorFlow is properly installed in the Poetry environment
+2. Check that the video files have visible faces for emotion detection
+3. Try running with a smaller video file first to validate the setup
+
+---
+
+## Additional Resources
+
+- [Project Documentation](https://github.com/username/Video_Data_Processing/docs)
+- [Poetry Documentation](https://python-poetry.org/docs/)
+- [FFmpeg Documentation](https://ffmpeg.org/documentation.html)
+- [Speech Processing Resources](https://github.com/speechbrain/speechbrain)

@@ -6,41 +6,12 @@ set -e
 echo "=== Video Data Processing SharePoint Downloader ==="
 echo "This script simplifies downloading videos from SharePoint."
 
-# Function to validate URL (basic check for SharePoint URLs)
-validate_url() {
-    local prompt=$1
-    local url=""
-    
-    while true; do
-        # Prompt for URL
-        read -p "$prompt" url
-        
-        # Check if URL is empty
-        if [ -z "$url" ]; then
-            echo "Error: URL cannot be empty."
-            continue
-        fi
-        
-        # Check for basic URL pattern (must start with http or https)
-        if [[ ! "$url" =~ ^https?:// ]]; then
-            echo "Invalid URL: Must start with http:// or https://"
-            continue
-        fi
-        
-        # Check for SharePoint-specific patterns
-        if [[ ! "$url" =~ sharepoint\.com || ! "$url" =~ (documents|sites|teams) ]]; then
-            echo "Warning: URL doesn't appear to be a SharePoint URL. It should contain 'sharepoint.com'"
-            read -p "Continue anyway? (y/n): " continue_anyway
-            if [[ ! "$continue_anyway" =~ ^[Yy] ]]; then
-                continue
-            fi
-        fi
-        
-        # If we get here, URL is valid
-        echo "$url"
-        return 0
-    done
-}
+# Get the script's directory and project root
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
+
+# Change to project root (instead of script directory)
+cd "$PROJECT_ROOT"
 
 # Get the script's directory and the project root
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"

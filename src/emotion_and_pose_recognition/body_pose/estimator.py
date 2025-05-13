@@ -97,6 +97,10 @@ class PoseEstimator:
         
         # Convert landmarks to pixel coordinates and confidence
         points = {}
+        
+        # Also create a list version of landmarks that's easier to draw
+        list_landmarks = [None] * 33  # Initialize with None values
+        
         for idx, landmark in enumerate(landmarks.landmark):
             # Get the landmark name from MediaPipe's POSE_LANDMARKS enum
             landmark_name = self.mp_pose.PoseLandmark(idx).name
@@ -107,14 +111,21 @@ class PoseEstimator:
             z = landmark.z  # Depth (relative to hip)
             visibility = landmark.visibility
             
+            # Update both formats
             points[landmark_name] = {
                 "x": x,
                 "y": y,
                 "z": z,
                 "visibility": float(visibility)
             }
+            
+            # Add to list format if visibility is acceptable
+            if visibility > 0.5:  # Only include reasonably visible landmarks
+                list_landmarks[idx] = (x, y)
         
-        data["landmarks"] = points
+        # Store both formats - dictionary for detailed data, list for drawing
+        data["landmarks"] = list_landmarks  # Use list format as primary for drawing
+        data["landmarks_dict"] = points     # Keep dictionary format for calculations
         
         # Calculate key angles and distances
         data["angles"] = self._calculate_key_angles(points)
@@ -218,7 +229,8 @@ class PoseEstimator:
             Dictionary with posture analysis results
         """
         posture = {}
-        landmarks = pose_data.get("landmarks", {})
+        # Use landmarks_dict instead of landmarks for posture analysis
+        landmarks = pose_data.get("landmarks_dict", {})
         angles = pose_data.get("angles", {})
         
         # Check if person is standing or sitting
