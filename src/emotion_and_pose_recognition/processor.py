@@ -14,8 +14,8 @@ from copy import deepcopy
 
 # Import the body pose estimator
 try:
-    from src.body_pose.estimator import PoseEstimator
-    from src.body_pose.utils import overlay_pose_text, save_pose_data
+    from body_pose.estimator import PoseEstimator
+    from body_pose.utils import overlay_pose_text, save_pose_data
     POSE_AVAILABLE = True
 except ImportError:
     POSE_AVAILABLE = False
