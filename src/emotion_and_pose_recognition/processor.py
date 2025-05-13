@@ -13,12 +13,10 @@ from . import utils
 from copy import deepcopy
 
 # Import the body pose estimator
-try:
-    from body_pose.estimator import PoseEstimator
-    from body_pose.utils import overlay_pose_text, save_pose_data
-    POSE_AVAILABLE = True
-except ImportError:
-    POSE_AVAILABLE = False
+from .body_pose.estimator import PoseEstimator
+from .body_pose.utils import overlay_pose_text, save_pose_data
+POSE_AVAILABLE = True
+
 
 # Try importing from utils package
 try:
