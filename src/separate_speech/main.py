@@ -101,11 +101,6 @@ def main():
         help="Output file format: wav (1), mp3 (2), or both (3)"
     )
     parser.add_argument(
-        "--detect-dialogues",
-        action="store_true",
-        help="Detect different speakers and save dialogues separately"
-    )
-    parser.add_argument(
         "--skip-no-speech",
         action="store_true",
         help="Skip files where no significant human speech is detected"
@@ -157,15 +152,6 @@ def main():
         logger.error("Please install required packages: pip install speechbrain moviepy torchaudio tqdm pydub")
         return 1
     
-    # Check for diarization dependencies if dialogue detection is requested
-    if args.detect_dialogues:
-        if not utils.check_diarization_dependencies():
-            logger.error("Missing pyannote.audio dependency required for dialogue detection.")
-            logger.error("Install with: pip install pyannote.audio==2.1.1")
-            logger.error("You'll also need a HuggingFace token with access to 'pyannote/speaker-diarization'")
-            logger.error("Set your token as environment variable HF_AUTH_TOKEN")
-            return 1
-    
     # Handle input_dir if provided - find all video files in that directory
     input_args = args.input
     if args.input_dir:
@@ -187,7 +173,6 @@ def main():
     # Collect video files - either from arguments or interactive selection
     video_files = []
     file_type_from_interactive = None
-    detect_dialogues_from_interactive = None
     
     # Use interactive mode if no input args or --interactive flag
     if not args.input or args.interactive:
@@ -195,12 +180,10 @@ def main():
         try:
             # Import the enhanced interface module if it exists
             from . import interface_extended
-            video_files, file_type_from_interactive, detect_dialogues_from_interactive = interface_extended.select_videos_interactively_with_options(all_video_files)
+            video_files, file_type_from_interactive = interface_extended.select_videos_interactively(all_video_files)
         except ImportError:
             # Fall back to standard interface
             video_files, file_type_from_interactive = interface.select_videos_interactively(all_video_files)
-            # Don't prompt for dialogue detection - set to None to use command line arg
-            detect_dialogues_from_interactive = 1
     else:
         # Use provided input arguments
         video_files = all_video_files
@@ -211,9 +194,6 @@ def main():
     
     # Process file type argument - interactive selection overrides command line if provided
     file_type = file_type_from_interactive or file_type
-    
-    # Process dialogue detection option - interactive selection overrides command line if provided
-    detect_dialogues = detect_dialogues_from_interactive if detect_dialogues_from_interactive is not None else args.detect_dialogues
     
     # Process each video file
     successful = 0
@@ -232,8 +212,7 @@ def main():
             # Process the file and check if speech was detected
             success, has_speech = processor.process_file(
                 video_path, args.output_dir, args.model, args.models_dir, 
-                args.chunk_size, file_type, detect_dialogues,
-                args.skip_no_speech, args.min_speech_seconds
+                args.chunk_size, file_type, args.skip_no_speech, args.min_speech_seconds
             )
             
             if success:
@@ -265,10 +244,7 @@ def main():
             
     print(f"🎵 Audio files saved to: {args.output_dir}")
     
-    # Update message based on file type and dialogue detection
-    if detect_dialogues:
-        print(f"📢 Dialogues were detected and saved in separate files.")
-    
+    # Update message based on file type
     if file_type == "wav":
         print("Files were saved in WAV format.")
     elif file_type == "mp3":
