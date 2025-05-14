@@ -131,25 +131,3 @@ def save_audio(waveform, sample_rate, output_path, file_type="mp3"):
     except Exception as e:
         logger.error(f"Error saving audio: {e}")
         return False
-
-def save_audio_segment(waveform, sample_rate, output_path, file_type="mp3"):
-    """
-    Save audio segment to file.
-    
-    Args:
-        waveform: Audio waveform tensor [channels, samples]
-        sample_rate: Sample rate of the audio
-        output_path: Path to save the audio (without extension)
-        file_type: Output format ("wav", "mp3", or "both")
-        
-    Returns:
-        Path to the saved file, or None if saving failed
-    """
-    if save_audio(waveform, sample_rate, output_path, file_type):
-        if file_type == "wav":
-            return str(output_path) + ".wav"
-        elif file_type == "mp3":
-            return str(output_path) + ".mp3"
-        elif file_type == "both":
-            return str(output_path) + ".mp3"  # Return MP3 by default for "both"
-    return None
