@@ -17,6 +17,7 @@ gitpython = ">=3.1.30"  # For downloading models
 tqdm = ">=4.66.0"       # For progress bars, used by multiple modules
 
 # Group common dependencies without numpy conflicts
+torch = ">=2.7.0"
 [tool.poetry.group.common]
 optional = true
 
@@ -51,6 +52,8 @@ soundfile = ">=0.12.1"
 transformers = ">=4.33.0"
 huggingface-hub = ">=0.17.0"
 sentencepiece = ">=0.1.99"
+pyannote-audio = ">=3.0.1"
+whisperx = ">=3.3.1"
 
 # For SharePoint downloads
 [tool.poetry.group.download]
