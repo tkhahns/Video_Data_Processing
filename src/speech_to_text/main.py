@@ -75,7 +75,7 @@ def select_files(directory: Path, file_type: str = "audio"):
         file_type: Type of files to look for ("audio")
         
     Returns:
-        Tuple of (selected file paths, output format)
+        Tuple of (selected file paths, output format, use_diarization)
     """
     from src.speech_to_text import SUPPORTED_AUDIO_FORMATS
     
@@ -96,7 +96,7 @@ def select_files(directory: Path, file_type: str = "audio"):
     
     if not all_files:
         print(f"\nNo {file_type} files found in {directory}")
-        return [], None
+        return [], None, False
     
     # Sort files alphabetically
     all_files = sorted(all_files)
@@ -121,7 +121,7 @@ def select_files(directory: Path, file_type: str = "audio"):
         
         if choice.lower() == 'q':
             print("Quitting...")
-            return [], None
+            return [], None, False
         
         if choice.lower() == 'all':
             print(f"Selected all {len(all_files)} files")
@@ -160,10 +160,17 @@ def select_files(directory: Path, file_type: str = "audio"):
         except ValueError:
             print("Invalid input. Please enter numbers separated by commas.")
     
-    # Now prompt for output format
+    # Get output format
     output_format = select_output_format()
     
-    return selected_files, output_format
+    # Ask about speaker diarization
+    print("\nWould you like to detect and label different speakers? (Speaker Diarization)")
+    print("This will identify different speakers in the audio and label them in the transcript.")
+    print("Note: This requires the pyannote.audio library and may take longer to process.")
+    
+    use_diarization = input("Enable speaker detection? (y/n): ").strip().lower() == 'y'
+    
+    return selected_files, output_format, use_diarization
 
 def select_files_from_list(file_list):
     """
@@ -173,7 +180,7 @@ def select_files_from_list(file_list):
         file_list: List of file paths to select from
         
     Returns:
-        Tuple of (selected file paths, output format)
+        Tuple of (selected file paths, output format, use_diarization)
     """
     # Sort files alphabetically
     all_files = sorted(file_list)
@@ -196,7 +203,7 @@ def select_files_from_list(file_list):
         
         if choice.lower() == 'q':
             print("Quitting...")
-            return [], None
+            return [], None, False
         
         if choice.lower() == 'all':
             print(f"Selected all {len(all_files)} files")
@@ -233,10 +240,17 @@ def select_files_from_list(file_list):
         except ValueError:
             print("Invalid input. Please enter numbers separated by commas.")
     
-    # Now prompt for output format
+    # Get output format
     output_format = select_output_format()
     
-    return selected_files, output_format
+    # Ask about speaker diarization
+    print("\nWould you like to detect and label different speakers? (Speaker Diarization)")
+    print("This will identify different speakers in the audio and label them in the transcript.")
+    print("Note: This requires the pyannote.audio library and may take longer to process.")
+    
+    use_diarization = input("Enable speaker detection? (y/n): ").strip().lower() == 'y'
+    
+    return selected_files, output_format, use_diarization
 
 def main():
     """Main function."""
@@ -304,6 +318,11 @@ def main():
         action="store_true",
         help="Force file selection prompt even when files are specified in command line"
     )
+    parser.add_argument(
+        "--diarize",
+        action="store_true",
+        help="Detect and label different speakers in the transcription"
+    )
     
     args = parser.parse_args()
     
@@ -347,19 +366,22 @@ def main():
     
     # Default output format from command line
     output_format = args.output_format
+    use_diarization = args.diarize
     
     # If no audio files found, interactive mode requested, or select flag is set
     if not all_audio_files or args.interactive or args.select:
         if args.select and all_audio_files:
             logger.info(f"Found {len(all_audio_files)} audio file(s). Select which ones to process:")
-            all_audio_files, interactive_format = select_files_from_list(all_audio_files)
+            all_audio_files, interactive_format, interactive_diarize = select_files_from_list(all_audio_files)
             if interactive_format:
                 output_format = interactive_format
+            use_diarization = interactive_diarize
         else:
             logger.info("No audio files found or interactive mode requested.")
-            all_audio_files, interactive_format = select_files(DEFAULT_AUDIO_DIR, "audio")
+            all_audio_files, interactive_format, interactive_diarize = select_files(DEFAULT_AUDIO_DIR, "audio")
             if interactive_format:
                 output_format = interactive_format
+            use_diarization = interactive_diarize
             
         if not all_audio_files:
             logger.info("No files selected. Please provide audio file(s) as arguments or use --recursive to search for files.")
@@ -367,10 +389,22 @@ def main():
     
     logger.info(f"Found {len(all_audio_files)} audio file(s) to process")
     logger.info(f"Using output format: {output_format}")
+    if use_diarization:
+        logger.info("Speaker diarization enabled: Will detect and label different speakers")
     
     # Create output directory
     output_dir = Path(args.output_dir)
     utils.ensure_dir_exists(output_dir)
+    
+    # Check for diarization dependencies if requested
+    if use_diarization:
+        try:
+            import pyannote.audio
+            logger.info("pyannote.audio detected for speaker diarization")
+        except ImportError:
+            logger.warning("pyannote.audio not found. Speaker diarization will be disabled.")
+            logger.warning("Install with: pip install pyannote.audio")
+            use_diarization = False
     
     # Process each audio file
     for audio_file in tqdm.tqdm(all_audio_files, desc="Transcribing audio files"):
@@ -387,7 +421,8 @@ def main():
                 args.model,
                 Path(args.models_dir),
                 args.language,
-                output_format=output_format
+                output_format=output_format,
+                diarize=use_diarization  # Make sure we pass diarize=True when needed
             )
             
             if "error" in result:
