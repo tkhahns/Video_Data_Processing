@@ -73,7 +73,8 @@ if command -v poetry &>/dev/null; then
         # STEP 3: Run speech-to-text if speech separation was successful
         if [ $SPEECH_EXIT -eq 0 ]; then
             echo -e "\n[5/6] Running speech-to-text on separated audio..."
-            poetry run scripts/macos/run_speech_to_text.sh --input-dir "$SPEECH_OUTPUT_DIR" --output-dir "$TRANSCRIPT_OUTPUT_DIR"
+            # Add --diarize flag to enable speaker detection
+            poetry run scripts/macos/run_speech_to_text.sh --input-dir "$SPEECH_OUTPUT_DIR" --output-dir "$TRANSCRIPT_OUTPUT_DIR" --diarize
             TRANSCRIPT_EXIT=$?
             
             # STEP 4: Run emotion and pose recognition on the original videos
