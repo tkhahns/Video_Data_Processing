@@ -54,6 +54,22 @@ FFmpeg is required for audio and video processing:
 brew install ffmpeg
 ```
 
+### Additional Dependencies for WhisperX
+
+WhisperX provides enhanced transcription with improved timestamp alignment:
+
+```bash
+# After installing the base dependencies with Poetry:
+# Install ffmpeg (if not already done)
+brew install ffmpeg
+
+# Additional system dependencies
+pip install faster-whisper
+
+# Make sure you have the latest version 
+poetry update
+```
+
 ---
 
 ## Setup Instructions
@@ -187,6 +203,12 @@ poetry run scripts/macos/run_speech_to_text.sh --input-dir "./my-speech" --outpu
 poetry run scripts/macos/run_speech_to_text.sh --language fr  # Language (default: en)
 poetry run scripts/macos/run_speech_to_text.sh --output-format txt  # Output format: srt, txt, or both
 poetry run scripts/macos/run_speech_to_text.sh --model whisperx  # Transcription model
+
+# Using WhisperX for enhanced transcription with speaker detection
+poetry run scripts/macos/run_speech_to_text.sh --model whisperx --diarize
+
+# For batch processing with WhisperX
+poetry run scripts/macos/run_speech_to_text.sh --model whisperx --output-format both --input-dir "./my-speech"
 ```
 
 ### 4. Analyze Emotions and Body Poses
@@ -265,6 +287,20 @@ If speech separation or transcription fails:
 1. Verify that FFmpeg is properly installed: `ffmpeg -version`
 2. Check that the input video files have valid audio tracks
 3. Try processing a different video file to isolate the issue
+
+### WhisperX Issues
+
+If you encounter issues with WhisperX:
+
+1. Ensure you have a compatible NVIDIA GPU and updated drivers for GPU acceleration (for M1/M2 Macs, MPS acceleration is used automatically)
+2. For CPU-only operation, use the `--device cpu` flag
+3. If you see memory errors, try setting `--batch-size 8` (default is 16)
+4. For alignment issues: `--no-align` will disable the alignment phase
+
+```bash
+# Example with troubleshooting options
+poetry run python -m src.speech_to_text --model whisperx --device cpu --batch-size 8 --no-align
+```
 
 ### Emotion Recognition Issues
 
