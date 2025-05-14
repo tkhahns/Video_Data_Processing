@@ -1,35 +1,38 @@
-# Video Data Processing Speech-to-Text
+# Stop on error
+$ErrorActionPreference = "Stop"
+
 Write-Host "=== Video Data Processing Speech-to-Text ===" -ForegroundColor Cyan
-Write-Host "This script transcribes speech audio files to text." -ForegroundColor Cyan
+Write-Host "This script transcribes speech audio files to text."
 
 # Get the script's directory and project root
-$SCRIPT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
-$PROJECT_ROOT = (Get-Item $SCRIPT_DIR).Parent.Parent.FullName
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ProjectRoot = Split-Path -Parent (Split-Path -Parent $ScriptDir)
 
 # Change to project root
-Set-Location -Path $PROJECT_ROOT
+Set-Location $ProjectRoot
 
 # Check if Poetry is installed
 if (-not (Get-Command poetry -ErrorAction SilentlyContinue)) {
     Write-Host "`nPoetry is not installed. Installing poetry is required for dependency management." -ForegroundColor Red
-    Write-Host "Please install Poetry with: (Invoke-WebRequest -Uri https://install.python-poetry.org -UseBasicParsing).Content | python -" -ForegroundColor Red
-    Write-Host "All dependencies are defined in pyproject.toml" -ForegroundColor Red
+    Write-Host "Please install Poetry with: (Invoke-WebRequest -Uri https://install.python-poetry.org -UseBasicParsing).Content | python -"
+    Write-Host "All dependencies are defined in pyproject.toml"
     exit 1
 } else {
     # Install dependencies using Poetry
     Write-Host "`n[1/2] Installing dependencies with Poetry..." -ForegroundColor Green
-    poetry install --with speech --with common
-    if ($LASTEXITCODE -ne 0) {
+    try {
+        poetry install --with speech --with common
+    } catch {
         Write-Host "Poetry installation had issues. Retrying with common dependencies only..." -ForegroundColor Yellow
         poetry install --with common
     }
 }
 
 # Help message if --help flag is provided
-if ($args.Count -gt 0 -and ($args[0] -eq "--help" -or $args[0] -eq "-h")) {
-    Write-Host "`nUsage: .\run_speech_to_text.ps1 [options] <audio_file(s)>" -ForegroundColor Yellow
+if ($args -contains "--help" -or $args -contains "-h") {
+    Write-Host "`nUsage: .\run_speech_to_text.ps1 [options] <audio_file(s)>"
     Write-Host ""
-    Write-Host "Options:" -ForegroundColor Yellow
+    Write-Host "Options:"
     Write-Host "  --input-dir DIR      Directory containing input audio files"
     Write-Host "  --output-dir DIR     Directory to save transcription files (default: ./output/transcripts)"
     Write-Host "  --model MODEL        Speech-to-text model to use (whisperx, xlsr)"
@@ -39,27 +42,29 @@ if ($args.Count -gt 0 -and ($args[0] -eq "--help" -or $args[0] -eq "-h")) {
     Write-Host "  --select             Force file selection prompt even when files are provided"
     Write-Host "  --debug              Enable debug logging"
     Write-Host "  --interactive        Force interactive audio selection mode"
+    Write-Host "  --no-diarize         Disable speaker diarization (speaker detection is enabled by default)"
     Write-Host "  --help               Show this help message"
     Write-Host ""
     Write-Host "If run without arguments, the script will show an interactive audio selection menu."
     exit 0
 }
 
-# Parse input arguments
-$inputDir = $null
-$outputDir = $null
+# Parse arguments
+$inputDir = ""
+$outputDir = ""
+$noDiarize = $false
 $otherArgs = @()
 
 for ($i = 0; $i -lt $args.Count; $i++) {
-    if ($args[$i] -eq "--input-dir" -and $i+1 -lt $args.Count) {
+    if ($args[$i] -eq "--input-dir" -and ($i+1) -lt $args.Count) {
         $inputDir = $args[$i+1]
         $i++
-    }
-    elseif ($args[$i] -eq "--output-dir" -and $i+1 -lt $args.Count) {
+    } elseif ($args[$i] -eq "--output-dir" -and ($i+1) -lt $args.Count) {
         $outputDir = $args[$i+1]
         $i++
-    }
-    else {
+    } elseif ($args[$i] -eq "--no-diarize") {
+        $noDiarize = $true
+    } else {
         $otherArgs += $args[$i]
     }
 }
@@ -71,14 +76,24 @@ Write-Host "`n[2/2] Running speech-to-text transcription..." -ForegroundColor Gr
 $cmdArgs = @()
 
 # Add input directory if specified
-if ($inputDir) {
-    Write-Host "Using input directory: $inputDir" -ForegroundColor Cyan
-    $cmdArgs += "--input-dir", $inputDir
+if ($inputDir -ne "") {
+    Write-Host "Using input directory: $inputDir"
+    $cmdArgs += "--input-dir"
+    $cmdArgs += $inputDir
 }
 
 # Add output directory if specified
-if ($outputDir) {
-    $cmdArgs += "--output-dir", $outputDir
+if ($outputDir -ne "") {
+    $cmdArgs += "--output-dir"
+    $cmdArgs += $outputDir
+}
+
+# Add diarize flag by default unless explicitly disabled
+if (-not $noDiarize) {
+    Write-Host "Speaker detection (diarization) is enabled"
+    $cmdArgs += "--diarize"
+} else {
+    Write-Host "Speaker detection (diarization) is disabled"
 }
 
 # Add other arguments
@@ -87,22 +102,22 @@ foreach ($arg in $otherArgs) {
 }
 
 # Use Poetry to run the script
-try {
-    if ($cmdArgs.Count -eq 0 -and $otherArgs.Count -eq 0) {
-        Write-Host "Entering interactive mode..." -ForegroundColor Cyan
+if ($cmdArgs.Count -eq 0 -and $otherArgs.Count -eq 0) {
+    Write-Host "Entering interactive mode..."
+    # Add diarize flag to interactive mode too
+    if (-not $noDiarize) {
+        poetry run python -m src.speech_to_text --interactive --diarize
+    } else {
         poetry run python -m src.speech_to_text --interactive
-    } else {
-        # Otherwise, pass all arguments to the script
-        poetry run python -m src.speech_to_text $cmdArgs
     }
+} else {
+    # Otherwise, pass all arguments to the script
+    poetry run python -m src.speech_to_text @cmdArgs
+}
 
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "`nSpeech-to-text transcription process completed successfully." -ForegroundColor Green
-    } else {
-        Write-Host "`nAn error occurred during the speech-to-text transcription process." -ForegroundColor Red
-        exit $LASTEXITCODE
-    }
-} catch {
-    Write-Host "`nAn exception occurred during speech-to-text: $_" -ForegroundColor Red
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "`nSpeech-to-text transcription process completed successfully." -ForegroundColor Green
+} else {
+    Write-Host "`nAn error occurred during the speech-to-text transcription process." -ForegroundColor Red
     exit 1
 }
