@@ -316,18 +316,20 @@ def perform_diarization(audio_path: Union[str, Path], pipeline) -> List[Tuple[fl
         # Ensure the path is a string
         audio_path_str = str(audio_path)
         
-        # Run diarization with optional parameters to improve multi-speaker detection
-        # You can adjust these parameters for better results with 3+ speakers
-        diarization = pipeline(
-            audio_path_str,
-            ## Uncomment and adjust these parameters if needed:
-            min_speakers=1,       # Minimum number of speakers to detect
-            max_speakers=3,       # Maximum number of speakers to detect
-            segmentation={        # Fine-tune segmentation behavior
-                "min_duration_on": 0.5,      # Minimum duration of speech (seconds)
-                "min_duration_off": 0.5,     # Minimum duration of silence (seconds)
-            }
-        )
+        # Run diarization with minimal parameters to avoid errors
+        # Different pyannote versions support different parameters
+        try:
+            # First try with commonly supported parameters
+            diarization = pipeline(
+                audio_path_str,
+                min_speakers=1,
+                max_speakers=4
+            )
+        except TypeError as param_error:
+            logger.warning(f"Parameter error in diarization: {param_error}")
+            logger.warning("Falling back to default parameters")
+            # Fall back to no parameters if the above fails
+            diarization = pipeline(audio_path_str)
         
         # Extract segments
         segments = []
