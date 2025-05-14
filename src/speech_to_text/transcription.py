@@ -60,13 +60,14 @@ class TranscriptionModel:
         """Load the model and processor."""
         raise NotImplementedError("Subclasses must implement this method")
         
-    def transcribe(self, audio_path: Path, language: str = "en") -> Dict:
+    def transcribe(self, audio_path: Path, language: str = "en", diarize: bool = False) -> Dict:
         """
         Transcribe audio file to text.
         
         Args:
             audio_path: Path to the audio file
             language: Language code for transcription
+            diarize: Whether to perform speaker diarization
             
         Returns:
             Dictionary containing transcription results
@@ -99,14 +100,96 @@ class WhisperXModel(TranscriptionModel):
             logger.error(f"Failed to load WhisperX model: {e}")
             raise
     
-    def transcribe(self, audio_path: Path, language: str = "en") -> Dict:
+    def transcribe(self, audio_path: Path, language: str = "en", diarize: bool = False) -> Dict:
         """Transcribe audio using WhisperX."""
         try:
             import whisperx
             
             if self.model is None:
                 self.load()
+            
+            # Check if diarization is requested
+            if diarize:
+                from . import diarization
                 
+                logger.info(f"Transcribing {audio_path} with speaker diarization...")
+                
+                # Step 1: Load the diarization model
+                diar_model = diarization.load_diarization_model(device="cpu")  # CPU is often more reliable for pyannote
+                
+                # Check if diarization model loaded successfully - added additional check
+                if diar_model is None:
+                    logger.warning("Failed to load diarization model. Falling back to standard transcription.")
+                    return self._transcribe_standard(audio_path, language)
+                
+                # Step 2: Perform diarization to get speaker segments
+                speaker_segments = diarization.perform_diarization(audio_path, diar_model)
+                if not speaker_segments:
+                    logger.warning("No speaker segments found. Falling back to standard transcription.")
+                    return self._transcribe_standard(audio_path, language)
+                
+                # Step 3: Segment the audio by speaker
+                audio_segments = diarization.segment_audio(audio_path, speaker_segments)
+                if not audio_segments:
+                    logger.warning("Failed to segment audio. Falling back to standard transcription.")
+                    return self._transcribe_standard(audio_path, language)
+                
+                # Step 4: Transcribe each segment
+                segment_results = {}
+                logger.info(f"Transcribing {len(audio_segments)} speaker segments...")
+                
+                with tqdm.tqdm(total=len(audio_segments), desc="Transcribing speaker segments") as pbar:
+                    for idx, (segment_data, sr, start, end, speaker) in audio_segments.items():
+                        # Save segment to a temporary file
+                        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
+                            import soundfile as sf
+                            sf.write(temp_file.name, segment_data, sr)
+                            
+                            # Transcribe the segment
+                            try:
+                                segment_result = self.model.transcribe(temp_file.name, language=language)
+                                
+                                # Extract text with proper error handling
+                                if isinstance(segment_result, dict):
+                                    # Get text from result dictionary
+                                    segment_text = segment_result.get("text", "").strip()
+                                    
+                                    # If text is empty but there are segments, try to get text from them
+                                    if not segment_text and "segments" in segment_result and segment_result["segments"]:
+                                        segment_text = " ".join(seg.get("text", "") for seg in segment_result["segments"] if seg.get("text"))
+                                else:
+                                    # Handle unexpected result type
+                                    segment_text = str(segment_result).strip()
+                                
+                                segment_results[idx] = (start, end, f"Speaker {speaker}", segment_text)
+                            except Exception as e:
+                                logger.warning(f"Error transcribing segment {idx}: {e}")
+                                # Add empty text for failed segment to maintain sequence
+                                segment_results[idx] = (start, end, f"Speaker {speaker}", "[Inaudible]")
+                            
+                            # Clean up the temporary file
+                            try:
+                                os.unlink(temp_file.name)
+                            except:
+                                pass
+                        pbar.update(1)
+                
+                # Step 5: Merge the transcriptions
+                result = diarization.merge_transcriptions(segment_results)
+                return result
+            else:
+                # Standard transcription without diarization
+                return self._transcribe_standard(audio_path, language)
+                
+        except Exception as e:
+            logger.error(f"Transcription error: {e}")
+            return {"error": str(e), "segments": []}
+    
+    def _transcribe_standard(self, audio_path: Path, language: str = "en") -> Dict:
+        """Standard transcription without speaker diarization."""
+        try:
+            import whisperx
+            
             logger.info(f"Transcribing {audio_path}...")
             
             # Transcribe audio
@@ -154,7 +237,7 @@ class XLSR_Model(TranscriptionModel):
             logger.error(f"Failed to load XLSR model: {e}")
             raise
     
-    def transcribe(self, audio_path: Path, language: str = "en") -> Dict:
+    def transcribe(self, audio_path: Path, language: str = "en", diarize: bool = False) -> Dict:
         """Transcribe audio using XLSR."""
         try:
             import librosa
@@ -163,6 +246,70 @@ class XLSR_Model(TranscriptionModel):
             
             if self.model is None or self.processor is None:
                 self.load()
+            
+            # Check if diarization is requested
+            if diarize:
+                from . import diarization
+                
+                logger.info(f"Transcribing {audio_path} with speaker diarization...")
+                
+                # Step 1: Load the diarization model
+                diar_model = diarization.load_diarization_model(device="cpu")
+                if diar_model is None:
+                    logger.warning("Failed to load diarization model. Falling back to standard transcription.")
+                    return self._transcribe_standard(audio_path, language)
+                
+                # Step 2: Perform diarization to get speaker segments
+                speaker_segments = diarization.perform_diarization(audio_path, diar_model)
+                if not speaker_segments:
+                    logger.warning("No speaker segments found. Falling back to standard transcription.")
+                    return self._transcribe_standard(audio_path, language)
+                
+                # Step 3: Segment the audio by speaker
+                audio_segments = diarization.segment_audio(audio_path, speaker_segments)
+                if not audio_segments:
+                    logger.warning("Failed to segment audio. Falling back to standard transcription.")
+                    return self._transcribe_standard(audio_path, language)
+                
+                # Step 4: Transcribe each segment
+                segment_results = {}
+                logger.info(f"Transcribing {len(audio_segments)} speaker segments...")
+                
+                with tqdm.tqdm(total=len(audio_segments), desc="Transcribing speaker segments") as pbar:
+                    for idx, (segment_data, sr, start, end, speaker) in audio_segments.items():
+                        # Resample to 16kHz for XLSR
+                        if sr != 16000:
+                            segment_data = librosa.resample(segment_data, orig_sr=sr, target_sr=16000)
+                            sr = 16000
+                            
+                        # Process audio
+                        inputs = self.processor(segment_data, sampling_rate=16000, return_tensors="pt").to(self.device)
+                        
+                        # Get logits and predicted transcription
+                        with torch.no_grad():
+                            logits = self.model(inputs.input_values).logits
+                            predicted_ids = torch.argmax(logits, dim=-1)
+                            transcription = self.processor.batch_decode(predicted_ids)[0]
+                        
+                        segment_results[idx] = (start, end, f"Speaker {speaker}", transcription)
+                        pbar.update(1)
+                
+                # Step 5: Merge the transcriptions
+                result = diarization.merge_transcriptions(segment_results)
+                return result
+            else:
+                # Standard transcription without diarization
+                return self._transcribe_standard(audio_path, language)
+            
+        except Exception as e:
+            logger.error(f"Transcription error: {e}")
+            return {"error": str(e), "segments": []}
+    
+    def _transcribe_standard(self, audio_path: Path, language: str = "en") -> Dict:
+        """Standard transcription without speaker diarization."""
+        try:
+            import librosa
+            import numpy as np
             
             logger.info(f"Transcribing {audio_path}...")
             
@@ -219,7 +366,8 @@ def transcribe_audio(
     model_name: str = "whisperx",
     model_dir: Path = None,
     language: str = "en",
-    output_format: str = "srt"
+    output_format: str = "srt",
+    diarize: bool = False
 ) -> Dict:
     """
     Transcribe an audio file and save the result.
@@ -231,6 +379,7 @@ def transcribe_audio(
         model_dir: Directory containing models
         language: Language code for transcription
         output_format: Format for saving output: "srt", "txt", or "both"
+        diarize: Whether to perform speaker diarization
         
     Returns:
         Dictionary containing transcription results
@@ -239,15 +388,16 @@ def transcribe_audio(
     model = load_transcription_model(model_name, model_dir)
     
     # Transcribe the audio
-    result = model.transcribe(audio_path, language)
+    result = model.transcribe(audio_path, language, diarize=diarize)
     
     # Save the transcription in the specified format(s)
-    save_transcription(result, output_path, output_format)
+    # Pass diarize flag as with_speakers parameter to ensure speaker labels are included
+    save_transcription(result, output_path, output_format, with_speakers=diarize)
     
     return result
 
 
-def save_transcription(result: Dict, output_path: Path, output_format: str = "srt") -> None:
+def save_transcription(result: Dict, output_path: Path, output_format: str = "srt", with_speakers: bool = False) -> None:
     """
     Save transcription results to a file.
     
@@ -255,6 +405,7 @@ def save_transcription(result: Dict, output_path: Path, output_format: str = "sr
         result: Transcription results
         output_path: Path to save the transcription
         output_format: Format for saving output: "srt", "txt", or "both"
+        with_speakers: Whether to include speaker labels in the output
     """
     # Create the directory if it doesn't exist
     os.makedirs(output_path.parent, exist_ok=True)
@@ -271,23 +422,28 @@ def save_transcription(result: Dict, output_path: Path, output_format: str = "sr
             else:
                 f.write(result.get("text", "") + "\n\n")
                 
-                # Write segments with timestamps
+                # Write segments with timestamps and speakers if available
                 for segment in result.get("segments", []):
                     start_time = segment.get("start", 0)
                     end_time = segment.get("end", 0)
                     text = segment.get("text", "")
+                    speaker = segment.get("speaker", "")
                     
                     # Format timestamp as [MM:SS.mmm]
                     start_str = f"{int(start_time // 60):02d}:{start_time % 60:06.3f}"
                     end_str = f"{int(end_time // 60):02d}:{end_time % 60:06.3f}"
                     
-                    f.write(f"[{start_str} --> {end_str}] {text}\n")
+                    # Include speaker if available
+                    if with_speakers and speaker:
+                        f.write(f"[{start_str} --> {end_str}] {speaker}: {text}\n")
+                    else:
+                        f.write(f"[{start_str} --> {end_str}] {text}\n")
         saved_files.append(txt_path)
         
     if output_format in ["srt", "both"]:
         # Save as SRT subtitle file
         srt_path = output_path.with_suffix('.srt')
-        save_as_srt(result, srt_path)
+        save_as_srt(result, srt_path, with_speakers)
         saved_files.append(srt_path)
     
     # Log the saved files
@@ -297,13 +453,14 @@ def save_transcription(result: Dict, output_path: Path, output_format: str = "sr
         logger.warning(f"No transcription files were saved. Invalid output format: {output_format}")
 
 
-def save_as_srt(result: Dict, output_path: Path) -> None:
+def save_as_srt(result: Dict, output_path: Path, with_speakers: bool = False) -> None:
     """
     Save transcription as SRT subtitle file.
     
     Args:
         result: Transcription results
         output_path: Path to save the SRT file
+        with_speakers: Whether to include speaker labels in the output
     """
     with open(output_path, 'w', encoding='utf-8') as f:
         if "error" in result:
@@ -313,6 +470,7 @@ def save_as_srt(result: Dict, output_path: Path) -> None:
                 start_time = segment.get("start", 0)
                 end_time = segment.get("end", 0)
                 text = segment.get("text", "")
+                speaker = segment.get("speaker", "")
                 
                 # Format timestamp for SRT as HH:MM:SS,mmm
                 start_h, start_m = divmod(start_time // 60, 60)
@@ -323,4 +481,31 @@ def save_as_srt(result: Dict, output_path: Path) -> None:
                 end_s, end_ms = divmod(end_time % 60, 1)
                 end_str = f"{int(end_h):02d}:{int(end_m):02d}:{int(end_s):02d},{int(end_ms * 1000):03d}"
                 
-                f.write(f"{i}\n{start_str} --> {end_str}\n{text}\n\n")
+                # Include speaker if available and with_speakers is True
+                if with_speakers and speaker:
+                    f.write(f"{i}\n{start_str} --> {end_str}\n{speaker}: {text}\n\n")
+                else:
+                    f.write(f"{i}\n{start_str} --> {end_str}\n{text}\n\n")
+
+
+def perform_diarization(audio_path: Union[str, Path], pipeline) -> List[Tuple[float, float, str]]:
+    """
+    Perform speaker diarization on an audio file.
+    """
+    # Extract segments
+    segments = []
+    speakers = {}
+    speaker_counter = 1
+    
+    for turn, _, speaker in diarization.itertracks(yield_label=True):
+        start = turn.start
+        end = turn.end
+        
+        # Create consistent speaker mapping (e.g., "SPEAKER_00" -> "1")
+        if speaker not in speakers:
+            speakers[speaker] = str(speaker_counter)
+            speaker_counter += 1
+        
+        segments.append((start, end, speakers[speaker]))
+    
+    return segments
