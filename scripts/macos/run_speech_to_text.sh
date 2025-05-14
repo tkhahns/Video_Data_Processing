@@ -21,7 +21,7 @@ if ! command -v poetry &> /dev/null; then
     exit 1
 else
     # Install dependencies using Poetry
-    echo -e "\n[1/2] Installing dependencies with Poetry..."
+    echo -e "\n[1/3] Installing dependencies with Poetry..."
     poetry install --with speech --with common || {
         echo "Poetry installation had issues. Retrying with common dependencies only..."
         poetry install --with common
@@ -42,6 +42,8 @@ if [ "$1" == "--help" ] || [ "$1" == "-h" ]; then
     echo "  --select             Force file selection prompt even when files are provided"
     echo "  --debug              Enable debug logging"
     echo "  --interactive        Force interactive audio selection mode"
+    echo "  --no-diarize         Disable speaker diarization (speaker detection is enabled by default)"
+    echo "  --no-fix-speakers    Skip fixing speaker numbers to be sequential"
     echo "  --help               Show this help message"
     echo ""
     echo "If run without arguments, the script will show an interactive audio selection menu."
@@ -51,6 +53,8 @@ fi
 # Look for input directory in arguments
 input_dir=""
 output_dir=""
+no_diarize=false
+no_fix_speakers=false
 other_args=()
 i=1
 while [ $i -le $# ]; do
@@ -61,6 +65,10 @@ while [ $i -le $# ]; do
     elif [ "$arg" == "--output-dir" ] && [ $i -lt $# ]; then
         i=$((i+1))
         output_dir="${!i}"
+    elif [ "$arg" == "--no-diarize" ]; then
+        no_diarize=true
+    elif [ "$arg" == "--no-fix-speakers" ]; then
+        no_fix_speakers=true
     else
         other_args+=("$arg")
     fi
@@ -68,7 +76,7 @@ while [ $i -le $# ]; do
 done
 
 # Run the speech-to-text script
-echo -e "\n[2/2] Running speech-to-text transcription..."
+echo -e "\n[2/3] Running speech-to-text transcription..."
 
 # Build command based on input parameters
 cmd_args=()
@@ -82,6 +90,16 @@ fi
 # Add output directory if specified
 if [ -n "$output_dir" ]; then
     cmd_args+=("--output-dir" "$output_dir")
+else
+    output_dir="./output/transcripts"
+fi
+
+# Add diarize flag by default unless explicitly disabled
+if [ "$no_diarize" = false ]; then
+    echo "Speaker detection (diarization) is enabled"
+    cmd_args+=("--diarize")
+else
+    echo "Speaker detection (diarization) is disabled"
 fi
 
 # Add other arguments
@@ -92,13 +110,37 @@ done
 # Use Poetry to run the script
 if [ ${#cmd_args[@]} -eq 0 ] && [ ${#other_args[@]} -eq 0 ]; then
     echo "Entering interactive mode..."
-    poetry run python -m src.speech_to_text --interactive
+    # Add diarize flag to interactive mode too
+    if [ "$no_diarize" = false ]; then
+        poetry run python -m src.speech_to_text --interactive --diarize
+    else
+        poetry run python -m src.speech_to_text --interactive
+    fi
 else
     # Otherwise, pass all arguments to the script
     poetry run python -m src.speech_to_text "${cmd_args[@]}"
 fi
 
-if [ $? -eq 0 ]; then
+TRANSCRIPTION_EXIT=$?
+
+# Run speaker label fixing script if transcription was successful and not disabled
+if [ $TRANSCRIPTION_EXIT -eq 0 ] && [ "$no_fix_speakers" = false ]; then
+    echo -e "\n[3/3] Fixing speaker labels in transcripts..."
+    
+    # Ensure the script is executable
+    chmod +x "$PROJECT_ROOT/scripts/fix_speaker_order.py"
+    
+    # Run the script on the output directory
+    poetry run python "$PROJECT_ROOT/scripts/fix_speaker_order.py" --dir "$output_dir" --fix
+else
+    if [ $TRANSCRIPTION_EXIT -ne 0 ]; then
+        echo -e "\nSkipping speaker label fixing due to transcription errors."
+    elif [ "$no_fix_speakers" = true ]; then
+        echo -e "\nSkipping speaker label fixing as requested."
+    fi
+fi
+
+if [ $TRANSCRIPTION_EXIT -eq 0 ]; then
     echo -e "\nSpeech-to-text transcription process completed successfully."
 else
     echo -e "\nAn error occurred during the speech-to-text transcription process."
