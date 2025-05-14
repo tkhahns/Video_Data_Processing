@@ -320,13 +320,13 @@ def perform_diarization(audio_path: Union[str, Path], pipeline) -> List[Tuple[fl
         # You can adjust these parameters for better results with 3+ speakers
         diarization = pipeline(
             audio_path_str,
-            # Uncomment and adjust these parameters if needed:
-            # min_speakers=3,       # Minimum number of speakers to detect
-            # max_speakers=5,       # Maximum number of speakers to detect
-            # segmentation={        # Fine-tune segmentation behavior
-            #     "min_duration_on": 0.5,      # Minimum duration of speech (seconds)
-            #     "min_duration_off": 0.5,     # Minimum duration of silence (seconds)
-            # }
+            ## Uncomment and adjust these parameters if needed:
+            min_speakers=1,       # Minimum number of speakers to detect
+            max_speakers=3,       # Maximum number of speakers to detect
+            segmentation={        # Fine-tune segmentation behavior
+                "min_duration_on": 0.5,      # Minimum duration of speech (seconds)
+                "min_duration_off": 0.5,     # Minimum duration of silence (seconds)
+            }
         )
         
         # Extract segments
