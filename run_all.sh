@@ -140,28 +140,46 @@ if command -v poetry &>/dev/null; then
             BATCH_FLAG="--batch"
         fi
         
-        # Run all steps sequentially
+        # Create a semaphore file to track completion of parallel processes
+        SEMAPHORE_FILE=$(mktemp)
         
-        # STEP 3: Run speech separation
-        echo -e "\n[4/6] Running speech separation..."
+        # Start emotion and pose recognition in parallel (background)
+        echo -e "\n[4/6] Running emotion and pose recognition in parallel..."
+        (
+            poetry run scripts/macos/run_emotion_and_pose_recognition.sh --input-dir "$DOWNLOADS_DIR" --output-dir "$EMOTIONS_AND_POSE_DIR" $BATCH_FLAG
+            EMOTION_EXIT=$?
+            echo "EMOTION_EXIT=$EMOTION_EXIT" >> "$SEMAPHORE_FILE"
+            echo -e "\nEmotion and pose recognition completed with exit code $EMOTION_EXIT"
+        ) &
+        EMOTION_PID=$!
+        
+        # Run speech processing pipeline sequentially
+        echo -e "\n[5/6] Running speech separation..."
         poetry run scripts/macos/run_separate_speech.sh --input-dir "$DOWNLOADS_DIR" --output-dir "$SPEECH_OUTPUT_DIR" $BATCH_FLAG
         SPEECH_EXIT=$?
         
-        # STEP 4: Run speech-to-text if speech separation was successful
-        TRANSCRIPT_EXIT=1  # Default to failure
+        # Only proceed with transcription if speech separation was successful
         if [ $SPEECH_EXIT -eq 0 ]; then
-            echo -e "\n[5/6] Running speech-to-text on separated audio..."
+            echo -e "\n[6/6] Running speech-to-text on separated audio..."
             poetry run scripts/macos/run_speech_to_text.sh --input-dir "$SPEECH_OUTPUT_DIR" --output-dir "$TRANSCRIPT_OUTPUT_DIR" --diarize $BATCH_FLAG
             TRANSCRIPT_EXIT=$?
         else
             echo -e "\nSpeech separation failed with exit code $SPEECH_EXIT"
-            echo "Skipping speech-to-text step."
+            TRANSCRIPT_EXIT=1  # Set failure code for transcript since we couldn't process it
         fi
         
-        # STEP 5: Run emotion and pose recognition
-        echo -e "\n[6/6] Running emotion and pose recognition..."
-        poetry run scripts/macos/run_emotion_and_pose_recognition.sh --input-dir "$DOWNLOADS_DIR" --output-dir "$EMOTIONS_AND_POSE_DIR" $BATCH_FLAG
-        EMOTION_EXIT=$?
+        # Wait for emotion recognition to complete
+        echo "Waiting for emotion and pose recognition to complete..."
+        wait $EMOTION_PID
+        
+        # Read the exit status of the emotion recognition process
+        if [ -f "$SEMAPHORE_FILE" ]; then
+            source "$SEMAPHORE_FILE"
+            rm -f "$SEMAPHORE_FILE"
+        else
+            # If semaphore file doesn't exist, assume failure
+            EMOTION_EXIT=1
+        fi
         
         # Report the final status of all pipeline steps
         echo -e "\n===== Pipeline Execution Summary ====="

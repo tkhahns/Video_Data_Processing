@@ -8,6 +8,7 @@ A comprehensive toolkit for processing video data, extracting speech, generating
 - **Speech Separation**: Extract clean speech from videos with background noise
 - **Speech-to-Text Transcription**: Convert speech to accurate text with speaker identification
 - **Emotion & Pose Recognition**: Analyze facial emotions and body poses in videos
+- **Parallel Processing**: Run CPU and GPU intensive tasks simultaneously for better performance
 - **Sequential Processing Pipeline**: Process videos through all steps automatically
 - **Batch Processing**: Process multiple videos without manual intervention
 - **Secure Authentication**: Hugging Face tokens used only during session (never stored)
@@ -95,6 +96,15 @@ poetry run scripts/macos/run_separate_speech.sh --input-dir "./my-videos" --batc
 poetry run scripts/macos/run_speech_to_text.sh --input-dir "./my-speech" --batch
 poetry run scripts/macos/run_emotion_and_pose_recognition.sh --input-dir "./my-videos" --batch
 ```
+
+## Performance Optimization
+
+The pipeline is optimized for performance in several ways:
+
+1. **Parallel Processing**: Emotion recognition runs in parallel with speech processing
+2. **Memory Management**: Resources are released after each processing step
+3. **Batch Processing**: Process multiple videos without manual intervention
+4. **File Format Handling**: Robust audio conversion with validation checks
 
 ## Known Issues & Solutions
 

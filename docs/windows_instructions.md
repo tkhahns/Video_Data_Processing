@@ -97,12 +97,12 @@ poetry install --with download
 
 ## Complete Processing Pipeline
 
-The `run_all.ps1` script provides a complete end-to-end pipeline that sequentially:
+The `run_all.ps1` script provides a complete end-to-end pipeline that:
 1. Prompts for your Hugging Face token (one-time, not saved)
 2. Downloads videos from SharePoint
-3. Extracts speech from the videos
-4. Transcribes the speech to text
-5. Analyzes emotions and body poses in the videos
+3. Runs emotion and pose recognition in parallel with speech processing for better performance
+4. Extracts speech from the videos
+5. Transcribes the speech to text
 6. Reports the total processing time and results
 
 All outputs are organized in timestamped directories for easy tracking.

@@ -164,17 +164,52 @@ if (Get-Command poetry -ErrorAction SilentlyContinue) {
             Write-Host "You will be prompted to select videos at each step." -ForegroundColor Yellow
         }
         
-        # Run all steps sequentially
+        # Create a temporary file to store the exit code from the parallel process
+        $SEMAPHORE_FILE = [System.IO.Path]::GetTempFileName()
         
-        # STEP 3: Run speech separation
-        Write-Host "`n[4/6] Running speech separation..." -ForegroundColor Green
+        # Start emotion and pose recognition in parallel (background job)
+        Write-Host "`n[4/6] Running emotion and pose recognition in parallel..." -ForegroundColor Green
+        $jobScript = {
+            param($ProjectRoot, $DownloadsDir, $EmotionsAndPoseDir, $BatchFlag, $SemaphoreFile, $HfToken)
+            
+            # Pass the Hugging Face token to the child process
+            $env:HUGGINGFACE_TOKEN = $HfToken
+            
+            try {
+                # Change to project root
+                Set-Location -Path $ProjectRoot
+                
+                # Run the emotion recognition script
+                & poetry run python -m src.emotion_and_pose_recognition.cli --input-dir "$DownloadsDir" --output-dir "$EmotionsAndPoseDir" $BatchFlag
+                $exitCode = $LASTEXITCODE
+                
+                # Write exit code to semaphore file
+                "EMOTION_EXIT=$exitCode" | Out-File -FilePath $SemaphoreFile -Encoding utf8
+                
+                Write-Host "`nEmotion and pose recognition completed with exit code $exitCode" -ForegroundColor $(if ($exitCode -eq 0) { "Green" } else { "Red" })
+            }
+            catch {
+                "EMOTION_EXIT=1" | Out-File -FilePath $SemaphoreFile -Encoding utf8
+                Write-Host "Error in emotion recognition job: $_" -ForegroundColor Red
+            }
+            finally {
+                # Clear the token
+                $env:HUGGINGFACE_TOKEN = ""
+            }
+        }
+        
+        # Start the background job, passing the Hugging Face token securely
+        $job = Start-Job -ScriptBlock $jobScript -ArgumentList $PROJECT_ROOT, $DOWNLOADS_DIR, $EMOTIONS_AND_POSE_DIR, $BATCH_FLAG, $SEMAPHORE_FILE, $env:HUGGINGFACE_TOKEN
+        
+        # Run speech processing pipeline sequentially
+        Write-Host "`n[5/6] Running speech separation..." -ForegroundColor Green
         & poetry run python -m src.separate_speech --input-dir "$DOWNLOADS_DIR" --output-dir "$SPEECH_OUTPUT_DIR" $BATCH_FLAG
         $SPEECH_EXIT = $LASTEXITCODE
         
-        # STEP 4: Run speech-to-text if speech separation was successful
+        # Only proceed with transcription if speech separation was successful
         $TRANSCRIPT_EXIT = 1  # Default to failure
         if ($SPEECH_EXIT -eq 0) {
-            Write-Host "`n[5/6] Running speech-to-text on separated audio..." -ForegroundColor Green
+            Write-Host "`n[6/6] Running speech-to-text on separated audio..." -ForegroundColor Green
             & poetry run python -m src.speech_to_text --input-dir "$SPEECH_OUTPUT_DIR" --output-dir "$TRANSCRIPT_OUTPUT_DIR" --diarize $BATCH_FLAG
             $TRANSCRIPT_EXIT = $LASTEXITCODE
         } else {
@@ -182,10 +217,26 @@ if (Get-Command poetry -ErrorAction SilentlyContinue) {
             Write-Host "Skipping speech-to-text step." -ForegroundColor Yellow
         }
         
-        # STEP 5: Run emotion and pose recognition
-        Write-Host "`n[6/6] Running emotion and pose recognition..." -ForegroundColor Green
-        & poetry run python -m src.emotion_and_pose_recognition.cli --input-dir "$DOWNLOADS_DIR" --output-dir "$EMOTIONS_AND_POSE_DIR" $BATCH_FLAG
-        $EMOTION_EXIT = $LASTEXITCODE
+        # Wait for emotion recognition to complete
+        Write-Host "Waiting for emotion and pose recognition to complete..." -ForegroundColor Cyan
+        Wait-Job -Job $job | Out-Null
+        # Get any output from the job and display it
+        Receive-Job -Job $job
+        # Remove the job
+        Remove-Job -Job $job
+        
+        # Read the exit status from the semaphore file
+        $EMOTION_EXIT = 1  # Default to failure
+        if (Test-Path -Path $SEMAPHORE_FILE) {
+            $exitContent = Get-Content -Path $SEMAPHORE_FILE -Raw
+            if ($exitContent -match "EMOTION_EXIT=(\d+)") {
+                $EMOTION_EXIT = [int]$Matches[1]
+            }
+            # Clean up the temporary file
+            Remove-Item -Path $SEMAPHORE_FILE -Force
+        } else {
+            Write-Host "Warning: Could not find job status file. Assuming emotion recognition failed." -ForegroundColor Yellow
+        }
         
         # Report the final status of all pipeline steps
         Write-Host "`n===== Pipeline Execution Summary =====" -ForegroundColor Cyan
