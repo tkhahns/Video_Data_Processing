@@ -6,6 +6,7 @@ import sys
 import argparse
 import logging
 from pathlib import Path
+import getpass
 
 # Add parent directory to sys.path to allow imports
 parent_dir = str(Path(__file__).resolve().parent.parent.parent)
@@ -26,6 +27,51 @@ except ImportError:
     )
     logger = logging.getLogger(__name__)
 
+def get_huggingface_token():
+    """
+    Get the Hugging Face token from environment variable or prompt the user.
+    
+    Returns:
+        str: The Hugging Face token
+    """
+    # Check if token exists in environment variable
+    token = os.environ.get("HUGGINGFACE_TOKEN")
+    
+    if not token:
+        # Check if token exists in token file
+        token_file = os.path.join(os.path.expanduser("~"), ".huggingface_token")
+        if os.path.exists(token_file):
+            try:
+                with open(token_file, "r") as f:
+                    token = f.read().strip()
+                logger.info("Using Hugging Face token from saved file")
+            except Exception as e:
+                logger.error(f"Error reading token file: {e}")
+                
+    if not token:
+        # Prompt user for token
+        print("\n=== Hugging Face Authentication Required ===")
+        print("This module requires a Hugging Face token for accessing models.")
+        print("You can get your token from: https://huggingface.co/settings/tokens")
+        print("The token will be saved locally for future use.")
+        token = getpass.getpass("Enter your Hugging Face token: ")
+        
+        # Save token for future use
+        if token:
+            try:
+                token_file = os.path.join(os.path.expanduser("~"), ".huggingface_token")
+                with open(token_file, "w") as f:
+                    f.write(token)
+                os.chmod(token_file, 0o600)  # Set permissions to owner read/write only
+                logger.info("Saved Hugging Face token for future use")
+            except Exception as e:
+                logger.error(f"Error saving token: {e}")
+    
+    if not token:
+        logger.error("No Hugging Face token provided. Some models may not work correctly.")
+    
+    return token
+
 def main():
     """Main entry point for the emotion and pose recognition CLI."""
     # Create argument parser
@@ -41,6 +87,8 @@ def main():
                         help='Enable multi-speaker tracking (up to 2 speakers) - default')
     parser.add_argument('--single-speaker', action='store_true',
                        help='Use single-speaker mode (disable multi-speaker tracking)')
+    parser.add_argument('--batch', action='store_true', 
+                       help='Process all files without manual selection')
     
     # Create subparsers for different commands
     subparsers = parser.add_subparsers(dest='command', help='Command to run')
@@ -75,6 +123,8 @@ def main():
                               help='Search for video files recursively in subdirectories')
     batch_parser.add_argument('--with-pose', '-p', action='store_true',
                               help='Also perform body pose estimation')
+    batch_parser.add_argument('--batch', action='store_true',
+                              help='Process all files without manual selection')
     
     # 3. Check dependencies command
     check_parser = subparsers.add_parser('check', help='Check if all dependencies are installed')
@@ -89,9 +139,15 @@ def main():
                                    help='Output directory for processed videos (default: output/emotions_and_pose)')
     interactive_parser.add_argument('--with-pose', '-p', action='store_true',
                                     help='Also perform body pose estimation')
-    
+    interactive_parser.add_argument('--batch', action='store_true',
+                                    help='Process all files without manual selection')
+
     # Parse arguments
     args = parser.parse_args()
+    
+    # Get Hugging Face token before proceeding
+    huggingface_token = get_huggingface_token()
+    os.environ["HUGGINGFACE_TOKEN"] = huggingface_token if huggingface_token else ""
     
     # Make interactive mode the default if no command is specified
     if args.command is None:
@@ -114,6 +170,10 @@ def main():
     if hasattr(args, 'single_speaker') and args.single_speaker:
         args.multi_speaker = False
 
+    # Handle batch mode
+    if hasattr(args, 'batch') and args.batch:
+        logger.info("Batch mode enabled - processing all files without manual selection")
+    
     # Check the command and run the corresponding function
     if args.command == 'process':
         # Check dependencies before processing
@@ -219,8 +279,14 @@ def main():
             logger.error(f"No video files found in {args.input_dir}")
             return 1
             
+        # Check if batch mode is enabled
+        batch_mode = getattr(args, 'batch', False)
+        if batch_mode:
+            logger.info(f"Batch mode enabled: Processing all {len(video_files)} files without manual selection")
+            
+        # Use the batch_mode flag when calling select_files_from_list 
         logger.info(f"Found {len(video_files)} video file(s). Select which ones to process:")
-        selected_files, log_only = utils.select_files_from_list(video_files)
+        selected_files, log_only = utils.select_files_from_list(video_files, batch_mode)
         
         if not selected_files:
             logger.info("No files selected. Exiting.")

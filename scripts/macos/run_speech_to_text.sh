@@ -43,6 +43,7 @@ if [ "$1" == "--help" ] || [ "$1" == "-h" ]; then
     echo "  --debug              Enable debug logging"
     echo "  --interactive        Force interactive audio selection mode"
     echo "  --no-diarize         Disable speaker diarization (speaker detection is enabled by default)"
+    echo "  --batch              Enable batch mode to process all files without manual selection"
     echo "  --help               Show this help message"
     echo ""
     echo "If run without arguments, the script will show an interactive audio selection menu."
@@ -53,6 +54,7 @@ fi
 input_dir=""
 output_dir=""
 no_diarize=false
+batch_mode=false
 other_args=()
 i=1
 while [ $i -le $# ]; do
@@ -65,6 +67,8 @@ while [ $i -le $# ]; do
         output_dir="${!i}"
     elif [ "$arg" == "--no-diarize" ]; then
         no_diarize=true
+    elif [ "$arg" == "--batch" ]; then
+        batch_mode=true
     else
         other_args+=("$arg")
     fi
@@ -94,6 +98,12 @@ if [ "$no_diarize" = false ]; then
     cmd_args+=("--diarize")
 else
     echo "Speaker detection (diarization) is disabled"
+fi
+
+# Add batch mode flag if specified
+if [ "$batch_mode" = true ]; then
+    echo "Running in batch mode - processing all files without manual selection"
+    cmd_args+=("--batch")
 fi
 
 # Add other arguments

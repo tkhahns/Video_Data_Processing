@@ -323,7 +323,7 @@ def perform_diarization(audio_path: Union[str, Path], pipeline) -> List[Tuple[fl
             diarization = pipeline(
                 audio_path_str,
                 min_speakers=1,
-                max_speakers=4
+                max_speakers=3
             )
         except TypeError as param_error:
             logger.warning(f"Parameter error in diarization: {param_error}")

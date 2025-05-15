@@ -13,6 +13,37 @@ PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 # Change to project root
 cd "$PROJECT_ROOT"
 
+# Check for Hugging Face token in environment
+if [ -z "$HUGGINGFACE_TOKEN" ]; then
+    echo -e "\n=== Hugging Face Authentication ==="
+    echo "This tool requires a Hugging Face token for accessing models."
+    echo "You can get your token from: https://huggingface.co/settings/tokens"
+    echo "Note: Your token will only be used for this session and will not be saved."
+    
+    # Prompt for token
+    read -sp "Enter your Hugging Face token (input will be hidden): " HUGGINGFACE_TOKEN
+    echo ""
+    
+    if [ -z "$HUGGINGFACE_TOKEN" ]; then
+        echo "No token provided. Some features may not work correctly."
+    else
+        echo "Token received for this session"
+    fi
+    
+    export HUGGINGFACE_TOKEN
+fi
+
+# Setup function to delete token on exit
+cleanup_token() {
+    if [ -n "$HUGGINGFACE_TOKEN" ]; then
+        echo "Clearing Hugging Face token from environment"
+        unset HUGGINGFACE_TOKEN
+    fi
+}
+
+# Register the cleanup function to run on script exit
+trap cleanup_token EXIT
+
 # Check if Poetry is installed
 if ! command -v poetry &> /dev/null; then
     echo -e "\nPoetry is not installed. Installing poetry is required for dependency management."
@@ -49,6 +80,7 @@ fi
 # Look for input directory in arguments
 input_dir=""
 output_dir=""
+batch_mode=false
 other_args=()
 i=1
 while [ $i -le $# ]; do
@@ -59,6 +91,8 @@ while [ $i -le $# ]; do
     elif [ "$arg" == "--output-dir" ] && [ $i -lt $# ]; then
         i=$((i+1))
         output_dir="${!i}"
+    elif [ "$arg" == "--batch" ]; then
+        batch_mode=true
     else
         other_args+=("$arg")
     fi
@@ -106,6 +140,12 @@ done
 
 if [ "$SINGLE_SPEAKER_PRESENT" = false ]; then
     cmd_args+=("--multi-speaker")
+fi
+
+# Add batch mode flag if specified
+if [ "$batch_mode" = true ]; then
+    echo "Running in batch mode - processing all files without manual selection"
+    cmd_args+=("--batch")
 fi
 
 # Add other arguments

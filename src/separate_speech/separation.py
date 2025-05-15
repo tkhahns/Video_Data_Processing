@@ -235,7 +235,6 @@ def separate_speech_chunked(audio, model, sample_rate, chunk_size_sec=10, overla
                 
                 # Apply cross-fade for overlapping regions (except for first chunk)
                 if start_idx > 0:
-                    # ...existing code for cross-fade...
                     # Calculate overlap region
                     overlap_start = start_idx
                     overlap_end = min(start_idx + overlap_size, audio_length)
@@ -300,3 +299,61 @@ def separate_speech_chunked(audio, model, sample_rate, chunk_size_sec=10, overla
     except Exception as e:
         logger.error(f"Error during chunked speech separation: {e}")
         return None
+
+def separate_speech_chunked(waveform, model, sample_rate, chunk_size_sec=10):
+    """
+    Separate speech from noise using a pre-trained model with chunking.
+    
+    Args:
+        waveform: Input audio waveform
+        model: Loaded speech separation model
+        sample_rate: Sample rate of the audio
+        chunk_size_sec: Size of audio chunks to process in seconds
+        
+    Returns:
+        Separated speech waveform
+    """
+    # Split waveform into chunks
+    chunk_size = int(chunk_size_sec * sample_rate)
+    chunks = [waveform[:, i:i+chunk_size] for i in range(0, waveform.size(1), chunk_size)]
+    
+    # Process each chunk
+    output_chunks = []
+    for i, chunk in enumerate(chunks):
+        try:
+            # Process chunk
+            with torch.no_grad():
+                est_sources = model.separate_batch(chunk)
+            
+            # Check for NaN values in output
+            if torch.isnan(est_sources).any():
+                logger.warning(f"NaN values detected in model output for chunk {i+1}/{len(chunks)}")
+                logger.warning("Using original audio chunk as fallback")
+                output_chunks.append(chunk)
+                continue
+            
+            # Verify the output shape matches expectations
+            if est_sources.shape[1] == chunk.shape[1]:
+                # Shape is correct, extract the speech component (first source)
+                separated_speech = est_sources[:, 0]
+                
+                # Additional validation - check if output is silent or very quiet
+                if torch.max(torch.abs(separated_speech)) < 1e-4:
+                    logger.warning(f"Output for chunk {i+1}/{len(chunks)} is nearly silent, using original audio")
+                    output_chunks.append(chunk)
+                else:
+                    output_chunks.append(separated_speech)
+            else:
+                # Shape mismatch, log the error and use original chunk as fallback
+                logger.warning(f"Shape mismatch on chunk {i+1}/{len(chunks)}: Expected shape {chunk.shape[1]}, " 
+                              f"got {est_sources.shape[1]}. Using original audio for this chunk.")
+                output_chunks.append(chunk)
+        except Exception as e:
+            # Handle any exceptions during separation
+            logger.error(f"Error processing chunk {i+1}/{len(chunks)}: {e}")
+            logger.error("Using original audio chunk as fallback")
+            output_chunks.append(chunk)  # Use original chunk as fallback
+            continue
+    
+    # Concatenate all processed chunks
+    return torch.cat(output_chunks, dim=1)

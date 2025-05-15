@@ -66,6 +66,13 @@ def process_video(input_path, output_path=None, log_path=None, show_preview=Fals
     Returns:
         bool: True if processing completed successfully, False otherwise.
     """
+    # Check for Hugging Face token if needed for model access
+    if model_name in ["emotion-transformer", "vit-emotion"] or with_pose:
+        huggingface_token = os.environ.get("HUGGINGFACE_TOKEN")
+        if not huggingface_token:
+            logger.warning("No Hugging Face token found. Some models may not work correctly.")
+            logger.warning("To set a token, run the script again and enter your token when prompted.")
+    
     if not os.path.exists(input_path):
         logger.error(f"Input video file not found: {input_path}")
         return False

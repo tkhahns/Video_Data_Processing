@@ -21,6 +21,32 @@ from selenium.common.exceptions import TimeoutException, ElementNotInteractableE
 # Get logger with colored output
 logger = init_logging.get_logger(__name__)
 
+def sanitize_filename(filename):
+    """
+    Sanitize a filename by replacing spaces with underscores and removing problematic characters.
+    
+    Args:
+        filename: Original filename
+        
+    Returns:
+        Sanitized filename
+    """
+    # Replace spaces with underscores
+    sanitized = filename.replace(' ', '_')
+    
+    # Remove parentheses and brackets as they can cause issues in some contexts
+    sanitized = sanitized.replace('(', '').replace(')', '')
+    sanitized = sanitized.replace('[', '').replace(']', '')
+    
+    # Remove other potentially problematic characters
+    sanitized = sanitized.replace(',', '').replace(';', '')
+    
+    # Ensure we don't have double underscores from removing characters
+    while '__' in sanitized:
+        sanitized = sanitized.replace('__', '_')
+    
+    return sanitized
+
 def monitor_downloads(download_dir, output_dir, timeout=1800, idle_timeout=60):
     """
     Monitor the downloads directory for new files and process them.
@@ -38,11 +64,14 @@ def monitor_downloads(download_dir, output_dir, timeout=1800, idle_timeout=60):
     logger.info(f"Downloaded files will be processed and moved to {output_dir}")
     
     # Ensure output directory exists
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-        logger.info(f"Created output directory: {output_dir}")
+    os.makedirs(output_dir, exist_ok=True)
+    logger.info(f"Ensured output directory exists: {output_dir}")
     
     # Get initial list of files
+    if not os.path.exists(download_dir):
+        os.makedirs(download_dir, exist_ok=True)
+        logger.info(f"Created downloads directory: {download_dir}")
+        
     initial_files = set(os.listdir(download_dir)) if os.path.exists(download_dir) else set()
     logger.info(f"Initial files in download directory: {len(initial_files)}")
     
@@ -50,6 +79,7 @@ def monitor_downloads(download_dir, output_dir, timeout=1800, idle_timeout=60):
     last_activity_time = start_time
     successful = 0
     failed = 0
+    processed_files = []  # Track processed files for verification
     
     print("\n==== Manual Download Instructions ====")
     print("1. Select and download files from the browser")
@@ -94,23 +124,56 @@ def monitor_downloads(download_dir, output_dir, timeout=1800, idle_timeout=60):
                 activity_occurred = True
                 
                 try:
+                    # Check if the source file exists before processing
+                    if not os.path.exists(file_path):
+                        logger.error(f"Source file doesn't exist: {file_path}")
+                        failed += 1
+                        continue
+                        
                     # Check if file is a ZIP archive
                     if filename.lower().endswith('.zip'):
                         logger.info(f"Processing ZIP archive: {filename}")
-                        zip_success = process_zip_file(file_path, output_dir)
-                        if zip_success:
+                        zip_success, extracted_paths = process_zip_file(file_path, output_dir)
+                        if zip_success > 0:
                             successful += zip_success
+                            processed_files.extend(extracted_paths)  # Add all extracted files to processed list
                         else:
                             failed += 1
                     else:
                         # Check if file is a video file
                         if is_video_file(filename):
-                            # Move the file to the output directory
-                            dest_path = os.path.join(output_dir, filename)
-                            shutil.move(file_path, dest_path)
-                            logger.info(f"Moved {filename} to {output_dir}")
-                            successful += 1
-                            print(f"✅ Downloaded and processed: {filename}")
+                            # Sanitize the filename to remove spaces and problematic characters
+                            sanitized_filename = sanitize_filename(filename)
+                            if sanitized_filename != filename:
+                                logger.info(f"Sanitized filename: '{filename}' -> '{sanitized_filename}'")
+                            
+                            # Make sure output directory exists
+                            os.makedirs(output_dir, exist_ok=True)
+                            
+                            # Move the file to the output directory with sanitized name
+                            dest_path = os.path.join(output_dir, sanitized_filename)
+                            
+                            # First copy then delete to avoid race conditions
+                            logger.info(f"Copying {filename} to {output_dir} as {sanitized_filename}")
+                            shutil.copy2(file_path, dest_path)
+                            
+                            # Verify file was copied correctly
+                            if os.path.exists(dest_path) and os.path.getsize(dest_path) > 0:
+                                # Delete the original only after successful copy
+                                try:
+                                    os.remove(file_path)
+                                except Exception as e:
+                                    logger.warning(f"Failed to remove original file {file_path}: {e}")
+                                
+                                # Add to processed files list for verification
+                                processed_files.append(dest_path)
+                                    
+                                logger.info(f"Successfully moved {filename} to {output_dir} as {sanitized_filename}")
+                                successful += 1
+                                print(f"✅ Downloaded and processed: {sanitized_filename}")
+                            else:
+                                logger.error(f"Failed to copy {filename} to {output_dir}")
+                                failed += 1
                         else:
                             logger.info(f"Skipping non-video file: {filename}")
                     
@@ -119,6 +182,9 @@ def monitor_downloads(download_dir, output_dir, timeout=1800, idle_timeout=60):
                     
                 except Exception as e:
                     logger.error(f"Error processing file {filename}: {e}")
+                    # Print stack trace for debugging
+                    import traceback
+                    logger.error(f"Exception details: {traceback.format_exc()}")
                     failed += 1
             
             # Update the last activity time if there was any file processing
@@ -131,7 +197,7 @@ def monitor_downloads(download_dir, output_dir, timeout=1800, idle_timeout=60):
     except KeyboardInterrupt:
         print("\nDownload monitoring stopped by user.")
     
-    # Final check for any remaining downloads
+    # Final check for any remaining downloads and verify successful transfers
     try:
         if os.path.exists(download_dir):
             final_files = set(os.listdir(download_dir))
@@ -148,25 +214,42 @@ def monitor_downloads(download_dir, output_dir, timeout=1800, idle_timeout=60):
                     # Process any remaining files
                     if filename.lower().endswith('.zip'):
                         logger.info(f"Processing ZIP archive: {filename}")
-                        zip_success = process_zip_file(file_path, output_dir)
-                        if zip_success:
+                        zip_success, extracted_paths = process_zip_file(file_path, output_dir)
+                        if zip_success > 0:
                             successful += zip_success
+                            processed_files.extend(extracted_paths)  # Add all extracted files to processed list
                         else:
                             failed += 1
                     elif is_video_file(filename):
                         dest_path = os.path.join(output_dir, filename)
                         shutil.move(file_path, dest_path)
+                        processed_files.append(dest_path)  # Track processed file location
                         logger.info(f"Moved {filename} to {output_dir}")
                         successful += 1
                         print(f"✅ Downloaded and processed: {filename}")
                 except Exception as e:
                     logger.error(f"Error processing file {filename}: {e}")
                     failed += 1
+                    
+        # Verify that files actually exist in the output directory
+        valid_files = 0
+        for file_path in processed_files:
+            if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+                valid_files += 1
+            else:
+                logger.warning(f"Processed file not found or empty: {file_path}")
+                
+        if valid_files != successful:
+            logger.warning(f"Mismatch between successful count ({successful}) and verified files ({valid_files})")
+            logger.info(f"Processed files tracked: {len(processed_files)}")
+            logger.info(f"Files found in output directory: {os.listdir(output_dir) if os.path.exists(output_dir) else 'directory not found'}")
+            successful = valid_files
     except Exception as e:
         logger.error(f"Error during final check: {e}")
     
     if successful > 0:
         print(f"\n✅ Download complete: Successfully processed {successful} video files")
+        logger.info(f"Confirmed {successful} video files in output directory: {output_dir}")
     else:
         print("\n⚠️ No video files were processed. Check if downloads completed correctly.")
     
@@ -189,11 +272,15 @@ def process_zip_file(zip_path, output_dir):
         output_dir: Directory to extract video files to
         
     Returns:
-        Number of video files extracted
+        Tuple of (number of video files extracted, list of paths)
     """
     try:
+        # Ensure output directory exists
+        os.makedirs(output_dir, exist_ok=True)
+        
         logger.info(f"Opening ZIP file: {zip_path}")
         extracted_videos = 0
+        extracted_paths = []  # Track extracted file paths
         
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
             # Extract only video files
@@ -205,15 +292,31 @@ def process_zip_file(zip_path, output_dir):
                     # Skip if empty filename (directory)
                     if not filename:
                         continue
+                        
+                    # Sanitize the filename to remove spaces and problematic characters
+                    sanitized_filename = sanitize_filename(filename)
+                    if sanitized_filename != filename:
+                        logger.info(f"Sanitized extracted filename: '{filename}' -> '{sanitized_filename}'")
                     
-                    # Extract the file to the output directory
+                    # Extract with original name first (ZIP extraction doesn't support renaming during extraction)
                     zip_ref.extract(file_info, output_dir)
                     
-                    # If file was extracted within a subdirectory, move it to the output dir root
+                    # Original extraction path and target path with sanitized name
                     extracted_path = os.path.join(output_dir, file_info.filename)
-                    target_path = os.path.join(output_dir, filename)
+                    target_path = os.path.join(output_dir, sanitized_filename)
                     
+                    # If names are different or file was extracted within a subdirectory, move it to the output dir root
                     if extracted_path != target_path:
+                        # Make sure we don't overwrite existing files with same sanitized name
+                        if os.path.exists(target_path):
+                            logger.warning(f"File with sanitized name already exists: {target_path}")
+                            # Add a timestamp to make the filename unique
+                            name, ext = os.path.splitext(sanitized_filename)
+                            timestamp = int(time.time())
+                            sanitized_filename = f"{name}_{timestamp}{ext}"
+                            target_path = os.path.join(output_dir, sanitized_filename)
+                            
+                        # Move the file to the target path with sanitized name
                         shutil.move(extracted_path, target_path)
                         
                         # Clean up empty directories
@@ -224,9 +327,24 @@ def process_zip_file(zip_path, output_dir):
                         except:
                             pass
                     
+                    extracted_paths.append(target_path)
                     extracted_videos += 1
-                    logger.info(f"Extracted video: {filename}")
-                    print(f"✅ Extracted from ZIP: {filename}")
+                    logger.info(f"Extracted video: {sanitized_filename}")
+                    print(f"✅ Extracted from ZIP: {sanitized_filename}")
+        
+        # Verify extracted files exist
+        valid_files = 0
+        for path in extracted_paths:
+            if os.path.exists(path) and os.path.getsize(path) > 0:
+                valid_files += 1
+            else:
+                logger.warning(f"Extracted file not found or empty: {path}")
+        
+        if valid_files != extracted_videos:
+            logger.warning(f"Mismatch between extracted count ({extracted_videos}) and verified files ({valid_files})")
+            extracted_videos = valid_files
+            # Keep only valid paths
+            extracted_paths = [path for path in extracted_paths if os.path.exists(path) and os.path.getsize(path) > 0]
         
         # Delete the ZIP file after extraction
         try:
@@ -235,7 +353,7 @@ def process_zip_file(zip_path, output_dir):
         except Exception as e:
             logger.warning(f"Failed to delete ZIP file {zip_path}: {e}")
         
-        return extracted_videos
+        return extracted_videos, extracted_paths
     except Exception as e:
         logger.error(f"Error processing ZIP file {zip_path}: {e}")
-        return 0
+        return 0, []

@@ -3,11 +3,51 @@
 # Exit on error
 set -e
 
+# Record start time
+START_TIME=$(date +%s)
+
 echo "=== Video Data Processing - Complete Pipeline ==="
 echo "This script downloads videos to a timestamped directory and processes them."
 
 # Get the script's directory (project root)
 PROJECT_ROOT="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+
+# Setup function to delete token on exit
+cleanup_token() {
+    if [ -n "$HUGGINGFACE_TOKEN" ]; then
+        echo "Clearing Hugging Face token from environment"
+        unset HUGGINGFACE_TOKEN
+    fi
+    
+    # Remove token file if it exists
+    TOKEN_FILE="$HOME/.huggingface_token"
+    if [ -f "$TOKEN_FILE" ]; then
+        echo "Removing saved Hugging Face token"
+        rm -f "$TOKEN_FILE"
+    fi
+}
+
+# Register the cleanup function to run on script exit
+trap cleanup_token EXIT
+
+# Get Hugging Face token - temporary for this session only
+echo -e "\n=== Hugging Face Authentication ==="
+echo "This tool requires a Hugging Face token for accessing models."
+echo "You can get your token from: https://huggingface.co/settings/tokens"
+echo "Note: Your token will only be used for this session and will not be saved."
+
+# Prompt for token
+read -sp "Enter your Hugging Face token (input will be hidden): " HUGGINGFACE_TOKEN
+echo ""
+
+# Validate token is provided
+if [ -z "$HUGGINGFACE_TOKEN" ]; then
+    echo "No token provided. Some features may not work correctly."
+else
+    echo "Token received for this session"
+fi
+
+export HUGGINGFACE_TOKEN
 
 # Create timestamped directory
 TIMESTAMP=$(date "+%Y%m%d_%H%M%S")
@@ -64,43 +104,99 @@ if command -v poetry &>/dev/null; then
     poetry run scripts/macos/run_download_videos.sh "$@" --output-dir "$DOWNLOADS_DIR"
     DOWNLOAD_EXIT=$?
     
-    # STEP 2: Run speech separation if download was successful
+    # STEP 2: Proceed if download was successful
     if [ $DOWNLOAD_EXIT -eq 0 ]; then
-        echo -e "\n[4/6] Running speech separation on downloaded videos..."
-        poetry run scripts/macos/run_separate_speech.sh --input-dir "$DOWNLOADS_DIR" --output-dir "$SPEECH_OUTPUT_DIR"
+        # Check if any videos were downloaded
+        VIDEO_COUNT=$(find "$DOWNLOADS_DIR" -type f \( -name "*.mp4" -o -name "*.avi" -o -name "*.mov" -o -name "*.mkv" -o -name "*.MP4" -o -name "*.MOV" -o -name "*.AVI" -o -name "*.MKV" \) | wc -l | tr -d '[:space:]')
+        
+        if [ "$VIDEO_COUNT" -eq 0 ]; then
+            echo -e "\nNo videos were found in the directory: $DOWNLOADS_DIR"
+            echo "Available files:"
+            ls -la "$DOWNLOADS_DIR"
+            echo "Pipeline halted - no videos to process."
+            exit 1
+        fi
+        
+        echo -e "\n${VIDEO_COUNT} videos found in the downloads directory:"
+        find "$DOWNLOADS_DIR" -type f \( -name "*.mp4" -o -name "*.avi" -o -name "*.mov" -o -name "*.mkv" -o -name "*.MP4" -o -name "*.MOV" -o -name "*.AVI" -o -name "*.MKV" \) -exec basename {} \;
+        
+        # Ask user if they want to process all videos or select manually
+        echo -e "\nHow would you like to process the downloaded videos?"
+        echo "1. Process all downloaded videos automatically"
+        echo "2. Select specific videos to process at each step"
+        
+        PROCESS_ALL=false
+        read -p "Enter your choice (1 or 2): " choice
+        if [ "$choice" == "1" ]; then
+            PROCESS_ALL=true
+            echo "Processing all videos automatically."
+        else
+            echo "You will be prompted to select videos at each step."
+        fi
+        
+        # Set batch flag based on user choice
+        BATCH_FLAG=""
+        if [ "$PROCESS_ALL" = true ]; then
+            BATCH_FLAG="--batch"
+        fi
+        
+        # Run all steps sequentially
+        
+        # STEP 3: Run speech separation
+        echo -e "\n[4/6] Running speech separation..."
+        poetry run scripts/macos/run_separate_speech.sh --input-dir "$DOWNLOADS_DIR" --output-dir "$SPEECH_OUTPUT_DIR" $BATCH_FLAG
         SPEECH_EXIT=$?
         
-        # STEP 3: Run speech-to-text if speech separation was successful
+        # STEP 4: Run speech-to-text if speech separation was successful
+        TRANSCRIPT_EXIT=1  # Default to failure
         if [ $SPEECH_EXIT -eq 0 ]; then
             echo -e "\n[5/6] Running speech-to-text on separated audio..."
-            # Add --diarize flag to enable speaker detection
-            poetry run scripts/macos/run_speech_to_text.sh --input-dir "$SPEECH_OUTPUT_DIR" --output-dir "$TRANSCRIPT_OUTPUT_DIR" --diarize
+            poetry run scripts/macos/run_speech_to_text.sh --input-dir "$SPEECH_OUTPUT_DIR" --output-dir "$TRANSCRIPT_OUTPUT_DIR" --diarize $BATCH_FLAG
             TRANSCRIPT_EXIT=$?
-            
-            # STEP 4: Run emotion and pose recognition on the original videos
-            echo -e "\n[6/6] Running emotion and pose recognition on downloaded videos..."
-            poetry run scripts/macos/run_emotion_and_pose_recognition.sh --input-dir "$DOWNLOADS_DIR" --output-dir "$EMOTIONS_AND_POSE_DIR"
-            EMOTION_EXIT=$?
-            
-            # Report the final status of all pipeline steps
-            echo -e "\n===== Pipeline Execution Summary ====="
-            echo "- Video Download: $([ $DOWNLOAD_EXIT -eq 0 ] && echo "✅ Success" || echo "❌ Failed")"
-            echo "- Speech Separation: $([ $SPEECH_EXIT -eq 0 ] && echo "✅ Success" || echo "❌ Failed")"
-            echo "- Speech-to-Text: $([ $TRANSCRIPT_EXIT -eq 0 ] && echo "✅ Success" || echo "❌ Failed")"
-            echo "- Emotion and Pose Recognition: $([ $EMOTION_EXIT -eq 0 ] && echo "✅ Success" || echo "❌ Failed")"
-            
-            echo -e "\nResults and outputs:"
-            echo "- Downloaded videos: $DOWNLOADS_DIR"
-            echo "- Separated speech: $SPEECH_OUTPUT_DIR"
-            echo "- Transcripts: $TRANSCRIPT_OUTPUT_DIR"
-            echo "- Emotion and pose analysis: $EMOTIONS_AND_POSE_DIR"
         else
             echo -e "\nSpeech separation failed with exit code $SPEECH_EXIT"
-            echo "Downloaded videos are still available at: $DOWNLOADS_DIR"
+            echo "Skipping speech-to-text step."
         fi
+        
+        # STEP 5: Run emotion and pose recognition
+        echo -e "\n[6/6] Running emotion and pose recognition..."
+        poetry run scripts/macos/run_emotion_and_pose_recognition.sh --input-dir "$DOWNLOADS_DIR" --output-dir "$EMOTIONS_AND_POSE_DIR" $BATCH_FLAG
+        EMOTION_EXIT=$?
+        
+        # Report the final status of all pipeline steps
+        echo -e "\n===== Pipeline Execution Summary ====="
+        echo "- Video Download: $([ $DOWNLOAD_EXIT -eq 0 ] && echo "✅ Success" || echo "❌ Failed")"
+        echo "- Speech Separation: $([ $SPEECH_EXIT -eq 0 ] && echo "✅ Success" || echo "❌ Failed")"
+        echo "- Speech-to-Text: $([ $TRANSCRIPT_EXIT -eq 0 ] && echo "✅ Success" || echo "❌ Failed")"
+        echo "- Emotion and Pose Recognition: $([ $EMOTION_EXIT -eq 0 ] && echo "✅ Success" || echo "❌ Failed")"
+        
+        # Calculate total process time
+        END_TIME=$(date +%s)
+        ELAPSED_TIME=$((END_TIME - START_TIME))
+        HOURS=$((ELAPSED_TIME / 3600))
+        MINUTES=$(( (ELAPSED_TIME % 3600) / 60 ))
+        SECONDS=$((ELAPSED_TIME % 60))
+        
+        # Format time with leading zeros for better readability
+        TIME_FORMAT=$(printf "%02d:%02d:%02d" $HOURS $MINUTES $SECONDS)
+        
+        echo -e "\nTotal process time: $TIME_FORMAT (HH:MM:SS)"
+        
+        echo -e "\nResults and outputs:"
+        echo "- Downloaded videos: $DOWNLOADS_DIR"
+        echo "- Separated speech: $SPEECH_OUTPUT_DIR"
+        echo "- Transcripts: $TRANSCRIPT_OUTPUT_DIR"
+        echo "- Emotion and pose analysis: $EMOTIONS_AND_POSE_DIR"
     else
         echo -e "\nVideo download failed or was canceled (exit code $DOWNLOAD_EXIT)."
         echo "Pipeline halted."
+        
+        # Show execution time even if the pipeline was halted
+        END_TIME=$(date +%s)
+        ELAPSED_TIME=$((END_TIME - START_TIME))
+        MINUTES=$(( ELAPSED_TIME / 60 ))
+        SECONDS=$(( ELAPSED_TIME % 60 ))
+        echo "Execution time: ${MINUTES}m ${SECONDS}s"
     fi
 else
     echo -e "\nPoetry not found. Cannot run the complete pipeline without Poetry."

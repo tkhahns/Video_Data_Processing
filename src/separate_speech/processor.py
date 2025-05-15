@@ -22,27 +22,12 @@ except ImportError:
     logger = logging.getLogger(__name__)
 
 def process_file(video_path, output_dir, model_name, models_dir, chunk_size_sec=10, file_type="mp3", skip_no_speech=False, min_speech_seconds=1.0):
-    """
-    Process a single video file for speech separation.
-    
-    Args:
-        video_path: Path to the video file
-        output_dir: Directory to save output files
-        model_name: Name of the speech separation model to use
-        models_dir: Directory containing downloaded models
-        chunk_size_sec: Size of audio chunks to process in seconds
-        file_type: Output format ("wav", "mp3", "both")
-        skip_no_speech: If True, skip files where no speech is detected
-        min_speech_seconds: Minimum seconds of speech needed to process file
-        
-    Returns:
-        Tuple of (success, has_speech)
-        - success: True if processing completed successfully
-        - has_speech: True if speech was detected in the file
-    """
+    """Process a single video file for speech separation."""
     video_filename = os.path.basename(video_path)
     video_name = os.path.splitext(video_filename)[0]
-    output_path = os.path.join(output_dir, f"{video_name}_speech")  # No extension, added later
+    # Remove spaces and special characters from output filename
+    safe_video_name = video_name.replace(" ", "_").replace("(", "").replace(")", "")
+    output_path = os.path.join(output_dir, f"{safe_video_name}_speech")  # No extension, added later
     
     # Ensure the output directory exists
     ensure_dir_exists(output_dir)
@@ -53,6 +38,7 @@ def process_file(video_path, output_dir, model_name, models_dir, chunk_size_sec=
         pbar.set_description("Extracting audio")
         waveform, sample_rate, temp_audio_path = extraction.extract_audio_from_video(video_path)
         if waveform is None:
+            logger.error(f"Failed to extract audio from {video_filename}")
             return False, False
         pbar.update(1)
         
@@ -64,6 +50,7 @@ def process_file(video_path, output_dir, model_name, models_dir, chunk_size_sec=
         pbar.set_description("Loading speech separation model")
         model = separation.load_speech_separation_model(model_name, models_dir)
         if model is None:
+            logger.error(f"Failed to load speech separation model: {model_name}")
             if temp_audio_path and os.path.exists(temp_audio_path):
                 os.remove(temp_audio_path)
             return False, False
@@ -78,14 +65,27 @@ def process_file(video_path, output_dir, model_name, models_dir, chunk_size_sec=
         clean_memory()
         
         if separated_speech is None:
+            logger.error(f"Speech separation failed for {video_filename}")
             if temp_audio_path and os.path.exists(temp_audio_path):
                 os.remove(temp_audio_path)
             return False, False
+        
+        # Validate the separated speech before saving
+        if torch.isnan(separated_speech).any():
+            logger.error(f"Separated speech contains NaN values for {video_filename}")
+            if temp_audio_path and os.path.exists(temp_audio_path):
+                os.remove(temp_audio_path)
+            return False, False
+            
+        # Check if output is completely silent
+        if torch.max(torch.abs(separated_speech)) < 1e-5:
+            logger.warning(f"Separated speech is nearly silent for {video_filename}")
+            
         pbar.update(1)
         
-        # Always save the full separated speech file
+        # Save the separated speech file
         pbar.set_description(f"Saving speech audio")
-        audio_io.save_audio(separated_speech, sample_rate, output_path, file_type)
+        save_success = audio_io.save_audio(separated_speech, sample_rate, output_path, file_type)
         
         # Clean up temp file from initial extraction
         if temp_audio_path and os.path.exists(temp_audio_path):
@@ -93,5 +93,16 @@ def process_file(video_path, output_dir, model_name, models_dir, chunk_size_sec=
         
         pbar.update(1)
         
+        if not save_success:
+            logger.error(f"Failed to save audio file for {video_filename}")
+            return False, False
+        
+        # Verify the output file exists
+        expected_output = f"{output_path}.{file_type if file_type != 'both' else 'mp3'}"
+        if not os.path.exists(expected_output) or os.path.getsize(expected_output) < 1000:
+            logger.error(f"Output file validation failed: {expected_output}")
+            return False, False
+            
+        logger.info(f"Successfully processed {video_filename}")
         # Report success and speech detected
         return True, True

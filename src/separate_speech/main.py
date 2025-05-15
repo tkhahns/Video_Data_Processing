@@ -111,6 +111,11 @@ def main():
         default=1.0,
         help="Minimum seconds of speech required to process a file (with --skip-no-speech)"
     )
+    parser.add_argument(
+        "--batch",
+        action="store_true",
+        help="Process all files without manual selection"
+    )
     
     args = parser.parse_args()
     
@@ -174,19 +179,27 @@ def main():
     video_files = []
     file_type_from_interactive = None
     
+    # Check if batch mode is enabled
+    batch_mode = args.batch if hasattr(args, 'batch') else False
+    
     # Use interactive mode if no input args or --interactive flag
-    if not args.input or args.interactive:
+    # But skip interactive selection if batch mode is enabled
+    if (not args.input or args.interactive) and not batch_mode:
         # Interactive video selection
         try:
             # Import the enhanced interface module if it exists
             from . import interface_extended
-            video_files, file_type_from_interactive = interface_extended.select_videos_interactively(all_video_files)
+            video_files, file_type_from_interactive = interface_extended.select_videos_interactively(all_video_files, batch_mode)
         except ImportError:
             # Fall back to standard interface
             video_files, file_type_from_interactive = interface.select_videos_interactively(all_video_files)
     else:
-        # Use provided input arguments
+        # Use provided input arguments or all files in batch mode
         video_files = all_video_files
+        
+    # If batch mode is enabled, log this information
+    if batch_mode:
+        logger.info(f"Batch mode enabled: Processing all {len(video_files)} files without manual selection")
     
     if not video_files:
         logger.error("No video files selected for processing")

@@ -181,18 +181,24 @@ def find_video_files(paths=None, recursive=False):
     
     return video_files
 
-def select_files_from_list(file_list):
+def select_files_from_list(file_list, batch_mode=False):
     """
     Allow user to select files from a provided list.
     
     Args:
         file_list: List of file paths to select from
+        batch_mode: If True, automatically select all files without prompting
         
     Returns:
         Tuple of (selected file paths, log_only mode)
     """
     # Sort files alphabetically
     all_files = sorted(file_list)
+    
+    # In batch mode, return all files without prompting
+    if batch_mode:
+        logger.info(f"Batch mode: automatically selecting all {len(all_files)} files")
+        return all_files, False
     
     # Print the list of available files
     print(f"\nAvailable video files:")
@@ -204,54 +210,60 @@ def select_files_from_list(file_list):
     selected_files = []
     
     # Prompt for selection
-    while True:
-        print("\nOptions:")
-        print("- Enter numbers (e.g., '1,3,5') to select specific files")
-        print("- Enter 'all' to process all files")
-        print("- Enter 'q' to quit")
-        
-        choice = input("\nYour selection: ").strip()
-        
-        if choice.lower() == 'q':
-            print("Quitting...")
-            return [], False
-        
-        if choice.lower() == 'all':
-            print(f"Selected all {len(all_files)} files")
-            selected_files = all_files
-            break
-        
-        try:
-            # Parse the selection
-            indices = [int(idx.strip()) for idx in choice.split(',') if idx.strip()]
+    try:
+        while True:
+            print("\nOptions:")
+            print("- Enter numbers (e.g., '1,3,5') to select specific files")
+            print("- Enter 'all' to process all files")
+            print("- Enter 'q' to quit")
             
-            # Validate indices
-            valid_indices = []
-            for idx in indices:
-                if 1 <= idx <= len(all_files):
-                    valid_indices.append(idx - 1)  # Convert to 0-based index
-                else:
-                    print(f"Warning: {idx} is not a valid file number")
+            choice = input("\nYour selection: ").strip()
             
-            if not valid_indices:
-                print("No valid files selected, please try again")
-                continue
+            if choice.lower() == 'q':
+                print("Quitting...")
+                return [], False
             
-            # Get the selected files
-            selected_files = [all_files[idx] for idx in valid_indices]
+            if choice.lower() == 'all':
+                print(f"Selected all {len(all_files)} files")
+                selected_files = all_files
+                break
             
-            # Print the selected files
-            print(f"\nSelected {len(selected_files)} files:")
-            for i, file_path in enumerate(selected_files, 1):
-                # Get just the filename part for display
-                display_name = os.path.basename(file_path)
-                print(f"{i}. {display_name}")
-            
-            # Proceeding without confirmation
-            break
-            
-        except ValueError:
-            print("Invalid input. Please enter numbers separated by commas.")
+            try:
+                # Parse the selection
+                indices = [int(idx.strip()) for idx in choice.split(',') if idx.strip()]
+                
+                # Validate indices
+                valid_indices = []
+                for idx in indices:
+                    if 1 <= idx <= len(all_files):
+                        valid_indices.append(idx - 1)  # Convert to 0-based index
+                    else:
+                        print(f"Warning: {idx} is not a valid file number")
+                
+                if not valid_indices:
+                    print("No valid files selected, please try again")
+                    continue
+                
+                # Get the selected files
+                selected_files = [all_files[idx] for idx in valid_indices]
+                
+                # Print the selected files
+                print(f"\nSelected {len(selected_files)} files:")
+                for i, file_path in enumerate(selected_files, 1):
+                    # Get just the filename part for display
+                    display_name = os.path.basename(file_path)
+                    print(f"{i}. {display_name}")
+                
+                # Proceeding without confirmation
+                break
+                
+            except ValueError:
+                print("Invalid input. Please enter numbers separated by commas.")
+    except EOFError:
+        # Handle EOF error gracefully when in non-interactive environment
+        logger.warning("EOF error detected during file selection - falling back to selecting all files")
+        print("Non-interactive environment detected, selecting all files")
+        selected_files = all_files
     
     # Now prompt for output format
     log_only = False

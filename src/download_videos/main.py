@@ -146,7 +146,17 @@ def main():
         action="store_true",
         help="Enable debug mode with detailed logging"
     )
+    parser.add_argument(
+        "--batch",
+        action="store_true",
+        help="Process all files without manual selection (Note: Manual download still required via browser interface)"
+    )
+    
     args = parser.parse_args()
+    
+    # Log if batch mode is enabled
+    if args.batch:
+        logger.info("Batch mode enabled: Files will still need manual download from browser, but will be processed automatically")
     
     return run_download(
         args.url, 

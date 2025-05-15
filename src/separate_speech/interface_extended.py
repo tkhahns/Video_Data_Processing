@@ -18,12 +18,13 @@ except ImportError:
     )
     logger = logging.getLogger(__name__)
 
-def select_videos_interactively(available_videos):
+def select_videos_interactively(available_videos, batch_mode=False):
     """
     Show an enhanced interactive interface for selecting videos to process.
     
     Args:
         available_videos: List of available video paths
+        batch_mode: If True, select all videos without prompting
         
     Returns:
         Tuple of (selected_videos, file_type)
@@ -31,6 +32,11 @@ def select_videos_interactively(available_videos):
     if not available_videos:
         logger.error("No video files found. Please provide valid video files or directories.")
         return [], None
+    
+    # If in batch mode, select all videos and use default file type
+    if batch_mode:
+        logger.info(f"Batch mode enabled: Selecting all {len(available_videos)} videos")
+        return available_videos, "mp3"  # Default output format
     
     # Ask how to select videos
     selection_method = questionary.select(

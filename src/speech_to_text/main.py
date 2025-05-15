@@ -323,6 +323,11 @@ def main():
         action="store_true",
         help="Detect and label different speakers in the transcription"
     )
+    parser.add_argument(
+        "--batch",
+        action="store_true",
+        help="Process all files without manual selection"
+    )
     
     args = parser.parse_args()
     
@@ -369,7 +374,8 @@ def main():
     use_diarization = args.diarize
     
     # If no audio files found, interactive mode requested, or select flag is set
-    if not all_audio_files or args.interactive or args.select:
+    # But don't enter interactive mode if batch mode is enabled
+    if (not all_audio_files or args.interactive or args.select) and not args.batch:
         if args.select and all_audio_files:
             logger.info(f"Found {len(all_audio_files)} audio file(s). Select which ones to process:")
             all_audio_files, interactive_format, interactive_diarize = select_files_from_list(all_audio_files)
@@ -386,6 +392,10 @@ def main():
         if not all_audio_files:
             logger.info("No files selected. Please provide audio file(s) as arguments or use --recursive to search for files.")
             return 0
+    
+    # If batch mode is enabled, log that we're processing all files automatically
+    if args.batch:
+        logger.info(f"Batch mode enabled: Processing all {len(all_audio_files)} files without manual selection")
     
     logger.info(f"Found {len(all_audio_files)} audio file(s) to process")
     logger.info(f"Using output format: {output_format}")

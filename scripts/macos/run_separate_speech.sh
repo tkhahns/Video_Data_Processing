@@ -40,6 +40,7 @@ if [ "$1" == "--help" ] || [ "$1" == "-h" ]; then
     echo "  --recursive          Process video files in subdirectories recursively"
     echo "  --debug              Enable debug logging"
     echo "  --interactive        Force interactive video selection mode"
+    echo "  --batch              Run in batch mode, processing all files without manual selection"
     echo "  --help               Show this help message"
     echo ""
     echo "If run without arguments, the script will show an interactive video selection menu."
@@ -49,6 +50,7 @@ fi
 # Look for input directory in arguments
 input_dir=""
 output_dir=""
+batch_mode=false
 other_args=()
 i=1
 while [ $i -le $# ]; do
@@ -59,6 +61,8 @@ while [ $i -le $# ]; do
     elif [ "$arg" == "--output-dir" ] && [ $i -lt $# ]; then
         i=$((i+1))
         output_dir="${!i}"
+    elif [ "$arg" == "--batch" ]; then
+        batch_mode=true
     else
         other_args+=("$arg")
     fi
@@ -80,6 +84,12 @@ fi
 # Add output directory if specified
 if [ -n "$output_dir" ]; then
     cmd_args+=("--output-dir" "$output_dir")
+fi
+
+# Add batch mode flag if specified
+if [ "$batch_mode" = true ]; then
+    echo "Running in batch mode - processing all files without manual selection"
+    cmd_args+=("--batch")
 fi
 
 # Add other arguments

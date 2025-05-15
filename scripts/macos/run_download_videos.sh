@@ -60,15 +60,59 @@ if [ "$url_provided" = true ]; then
         fi
     fi
 fi
-
-# If URL wasn't provided or was rejected, get a valid URL
+# If URL is not provided, prompt the user for it
 if [ "$url_provided" = false ]; then
-    url=$(validate_url "Please enter the SharePoint URL containing the videos you want to download: ")
+    read -p "Please enter the SharePoint folder URL: " url
+    if [[ ! "$url" =~ ^https?:// ]] || [[ ! "$url" =~ sharepoint\.com ]]; then
+        echo "Error: The provided URL is not valid. Please provide a valid SharePoint URL."
+        exit 1
+    fi
 fi
 
 # Run the download script with all arguments using Poetry
 echo -e "\nRunning SharePoint downloader..."
-poetry run python -m src.download_videos.main --url "$url" "${script_args[@]}"
 
-echo -e "\nDownload process completed."
-exit $?
+# Add a check to see if the output directory is provided in script_args
+output_dir_provided=false
+for arg in "${script_args[@]}"; do
+    if [ "$arg" == "--output-dir" ]; then
+        output_dir_provided=true
+        break
+    fi
+done
+
+# Run the download script
+poetry run python -m src.download_videos.main --url "$url" "${script_args[@]}"
+DOWNLOAD_EXIT=$?
+
+if [ $DOWNLOAD_EXIT -eq 0 ]; then
+    # Determine the output directory that was used
+    DEFAULT_VIDEOS_DIR="./data/videos"
+    OUTPUT_DIR="$DEFAULT_VIDEOS_DIR"
+    
+    # Parse the output directory from args if provided
+    i=0
+    while [ $i -lt ${#script_args[@]} ]; do
+        if [ "${script_args[$i]}" == "--output-dir" ] && [ $((i+1)) -lt ${#script_args[@]} ]; then
+            OUTPUT_DIR="${script_args[$((i+1))]}"
+            break
+        fi
+        i=$((i+1))
+    done
+    
+    # Verify that files exist in the output directory
+    VIDEO_COUNT=$(find "$OUTPUT_DIR" -type f \( -name "*.mp4" -o -name "*.avi" -o -name "*.mov" -o -name "*.mkv" -o -name "*.MP4" -o -name "*.MOV" -o -name "*.AVI" -o -name "*.MKV" \) | wc -l | tr -d '[:space:]')
+    
+    if [ "$VIDEO_COUNT" -gt 0 ]; then
+        echo -e "\nSuccessfully downloaded ${VIDEO_COUNT} video files to: ${OUTPUT_DIR}"
+        echo "Files available:"
+        find "$OUTPUT_DIR" -type f \( -name "*.mp4" -o -name "*.avi" -o -name "*.mov" -o -name "*.mkv" -o -name "*.MP4" -o -name "*.MOV" -o -name "*.AVI" -o -name "*.MKV" \) -exec basename {} \;
+    else
+        echo -e "\nWarning: No video files were found in the output directory: ${OUTPUT_DIR}"
+        echo "Available files (if any):"
+        ls -la "$OUTPUT_DIR"
+    fi
+fi
+
+echo -e "\nDownload process completed with exit code: $DOWNLOAD_EXIT"
+exit $DOWNLOAD_EXIT
