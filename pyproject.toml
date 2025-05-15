@@ -15,6 +15,7 @@ setuptools = ">=65.0.0"
 wheel = ">=0.38.0"
 gitpython = ">=3.1.30"  # For downloading models
 tqdm = ">=4.66.0"       # For progress bars, used by multiple modules
+psutil = ">=5.9.0"      # For system monitoring, memory usage tracking
 
 # Group common dependencies without numpy conflicts
 torch = ">=2.7.0"
