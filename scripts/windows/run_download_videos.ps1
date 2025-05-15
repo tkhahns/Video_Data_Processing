@@ -34,6 +34,7 @@ if ($args.Count -gt 0 -and ($args[0] -eq "--help" -or $args[0] -eq "-h")) {
     Write-Host "  --output-dir PATH     Directory to save downloaded files (default: .\data\videos)"
     Write-Host "  --list-only           Just list files without downloading"
     Write-Host "  --debug               Enable debug mode with detailed logging"
+    Write-Host "  --batch               Process all files without manual selection" -ForegroundColor Yellow
     Write-Host ""
     exit 0
 }
@@ -41,6 +42,7 @@ if ($args.Count -gt 0 -and ($args[0] -eq "--help" -or $args[0] -eq "-h")) {
 # Check if URL is provided in arguments
 $urlProvided = $false
 $url = $null
+$batchMode = $false
 $otherArgs = @()
 
 for ($i = 0; $i -lt $args.Count; $i++) {
@@ -48,6 +50,8 @@ for ($i = 0; $i -lt $args.Count; $i++) {
         $url = $args[$i+1]
         $urlProvided = $true
         $i++
+    } elseif ($args[$i] -eq "--batch") {
+        $batchMode = $true
     } else {
         $otherArgs += $args[$i]
     }
@@ -70,6 +74,13 @@ Write-Host "`n[2/2] Running SharePoint downloader..." -ForegroundColor Green
 
 # Build command arguments
 $cmdArgs = @("--url", $url)
+
+# Add batch mode flag if specified
+if ($batchMode) {
+    Write-Host "Running in batch mode - downloading all files without manual selection" -ForegroundColor Cyan
+    $cmdArgs += "--batch"
+}
+
 foreach ($arg in $otherArgs) {
     $cmdArgs += $arg
 }

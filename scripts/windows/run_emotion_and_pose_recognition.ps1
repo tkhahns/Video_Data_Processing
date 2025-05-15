@@ -9,6 +9,26 @@ $PROJECT_ROOT = (Get-Item $SCRIPT_DIR).Parent.Parent.FullName
 # Change to project root
 Set-Location -Path $PROJECT_ROOT
 
+# Check for Hugging Face token in environment
+if ([string]::IsNullOrEmpty($env:HUGGINGFACE_TOKEN)) {
+    Write-Host "`n=== Hugging Face Authentication ===" -ForegroundColor Cyan
+    Write-Host "This tool requires a Hugging Face token for accessing models." -ForegroundColor Yellow
+    Write-Host "You can get your token from: https://huggingface.co/settings/tokens" -ForegroundColor Yellow
+    Write-Host "Note: Your token will only be used for this session and will not be saved." -ForegroundColor Yellow
+    
+    # Prompt for token
+    $HF_TOKEN = Read-Host -Prompt "Enter your Hugging Face token"
+    
+    if ([string]::IsNullOrEmpty($HF_TOKEN)) {
+        Write-Host "No token provided. Some features may not work correctly." -ForegroundColor Red
+    } else {
+        Write-Host "Token received for this session" -ForegroundColor Green
+    }
+    
+    # Set environment variable
+    $env:HUGGINGFACE_TOKEN = $HF_TOKEN
+}
+
 # Check if Poetry is installed
 if (-not (Get-Command poetry -ErrorAction SilentlyContinue)) {
     Write-Host "`nPoetry is not installed. Installing poetry is required for dependency management." -ForegroundColor Red
@@ -44,6 +64,7 @@ if ($args.Count -gt 0 -and ($args[0] -eq "--help" -or $args[0] -eq "-h")) {
 # Parse input arguments
 $inputDir = $null
 $outputDir = $null
+$batchMode = $false
 $otherArgs = @()
 
 for ($i = 0; $i -lt $args.Count; $i++) {
@@ -54,6 +75,9 @@ for ($i = 0; $i -lt $args.Count; $i++) {
     elseif ($args[$i] -eq "--output-dir" -and $i+1 -lt $args.Count) {
         $outputDir = $args[$i+1]
         $i++
+    }
+    elseif ($args[$i] -eq "--batch") {
+        $batchMode = $true
     }
     else {
         $otherArgs += $args[$i]
@@ -90,6 +114,25 @@ if (-not $NO_POSE_PRESENT) {
     $cmdArgs += "--with-pose"
 }
 
+# Always use multi-speaker by default (unless --single-speaker is explicitly included)
+$SINGLE_SPEAKER_PRESENT = $false
+foreach ($arg in $otherArgs) {
+    if ($arg -eq "--single-speaker") {
+        $SINGLE_SPEAKER_PRESENT = $true
+        break
+    }
+}
+
+if (-not $SINGLE_SPEAKER_PRESENT) {
+    $cmdArgs += "--multi-speaker"
+}
+
+# Add batch mode flag if specified
+if ($batchMode) {
+    Write-Host "Running in batch mode - processing all files without manual selection" -ForegroundColor Cyan
+    $cmdArgs += "--batch"
+}
+
 # Add other arguments
 foreach ($arg in $otherArgs) {
     $cmdArgs += $arg
@@ -98,11 +141,11 @@ foreach ($arg in $otherArgs) {
 # Use Poetry to run the script
 try {
     if ($cmdArgs.Count -eq 0 -and $otherArgs.Count -eq 0) {
-        Write-Host "Entering interactive mode with pose estimation..." -ForegroundColor Cyan
-        poetry run python -m src.emotion_recognition.cli --with-pose --interactive
+        Write-Host "Entering interactive mode with pose estimation and multi-speaker tracking..." -ForegroundColor Cyan
+        poetry run python -m src.emotion_and_pose_recognition.cli --with-pose --multi-speaker --interactive
     } else {
         # Otherwise, pass all arguments to the script
-        poetry run python -m src.emotion_recognition.cli $cmdArgs
+        poetry run python -m src.emotion_and_pose_recognition.cli $cmdArgs
     }
 
     if ($LASTEXITCODE -eq 0) {
@@ -114,4 +157,9 @@ try {
 } catch {
     Write-Host "`nAn exception occurred during emotion and pose recognition: $_" -ForegroundColor Red
     exit 1
+}
+
+# Clear the token from the environment if we set it locally
+if ([string]::IsNullOrEmpty($HF_TOKEN) -eq $false) {
+    $env:HUGGINGFACE_TOKEN = ""
 }

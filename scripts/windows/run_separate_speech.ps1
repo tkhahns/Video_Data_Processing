@@ -37,6 +37,7 @@ if ($args.Count -gt 0 -and ($args[0] -eq "--help" -or $args[0] -eq "-h")) {
     Write-Host "  --recursive          Process video files in subdirectories recursively"
     Write-Host "  --debug              Enable debug logging"
     Write-Host "  --interactive        Force interactive video selection mode"
+    Write-Host "  --batch              Run in batch mode, processing all files without manual selection" -ForegroundColor Yellow
     Write-Host "  --help               Show this help message"
     Write-Host ""
     Write-Host "If run without arguments, the script will show an interactive video selection menu."
@@ -46,6 +47,7 @@ if ($args.Count -gt 0 -and ($args[0] -eq "--help" -or $args[0] -eq "-h")) {
 # Parse input arguments
 $inputDir = $null
 $outputDir = $null
+$batchMode = $false
 $otherArgs = @()
 
 for ($i = 0; $i -lt $args.Count; $i++) {
@@ -56,6 +58,9 @@ for ($i = 0; $i -lt $args.Count; $i++) {
     elseif ($args[$i] -eq "--output-dir" -and $i+1 -lt $args.Count) {
         $outputDir = $args[$i+1]
         $i++
+    }
+    elseif ($args[$i] -eq "--batch") {
+        $batchMode = $true
     }
     else {
         $otherArgs += $args[$i]
@@ -77,6 +82,12 @@ if ($inputDir) {
 # Add output directory if specified
 if ($outputDir) {
     $cmdArgs += "--output-dir", $outputDir
+}
+
+# Add batch mode flag if specified
+if ($batchMode) {
+    Write-Host "Running in batch mode - processing all files without manual selection" -ForegroundColor Cyan
+    $cmdArgs += "--batch"
 }
 
 # Add other arguments

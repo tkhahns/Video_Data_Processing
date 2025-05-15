@@ -2,7 +2,7 @@
 $ErrorActionPreference = "Stop"
 
 Write-Host "=== Video Data Processing Speech-to-Text ===" -ForegroundColor Cyan
-Write-Host "This script transcribes speech audio files to text."
+Write-Host "This script transcribes speech audio files to text." -ForegroundColor Cyan
 
 # Get the script's directory and project root
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -43,6 +43,7 @@ if ($args -contains "--help" -or $args -contains "-h") {
     Write-Host "  --debug              Enable debug logging"
     Write-Host "  --interactive        Force interactive audio selection mode"
     Write-Host "  --no-diarize         Disable speaker diarization (speaker detection is enabled by default)"
+    Write-Host "  --batch              Enable batch mode to process all files without manual selection" -ForegroundColor Yellow
     Write-Host "  --help               Show this help message"
     Write-Host ""
     Write-Host "If run without arguments, the script will show an interactive audio selection menu."
@@ -53,6 +54,7 @@ if ($args -contains "--help" -or $args -contains "-h") {
 $inputDir = ""
 $outputDir = ""
 $noDiarize = $false
+$batchMode = $false
 $otherArgs = @()
 
 for ($i = 0; $i -lt $args.Count; $i++) {
@@ -64,6 +66,8 @@ for ($i = 0; $i -lt $args.Count; $i++) {
         $i++
     } elseif ($args[$i] -eq "--no-diarize") {
         $noDiarize = $true
+    } elseif ($args[$i] -eq "--batch") {
+        $batchMode = $true
     } else {
         $otherArgs += $args[$i]
     }
@@ -77,7 +81,7 @@ $cmdArgs = @()
 
 # Add input directory if specified
 if ($inputDir -ne "") {
-    Write-Host "Using input directory: $inputDir"
+    Write-Host "Using input directory: $inputDir" -ForegroundColor Cyan
     $cmdArgs += "--input-dir"
     $cmdArgs += $inputDir
 }
@@ -90,10 +94,16 @@ if ($outputDir -ne "") {
 
 # Add diarize flag by default unless explicitly disabled
 if (-not $noDiarize) {
-    Write-Host "Speaker detection (diarization) is enabled"
+    Write-Host "Speaker detection (diarization) is enabled" -ForegroundColor Cyan
     $cmdArgs += "--diarize"
 } else {
-    Write-Host "Speaker detection (diarization) is disabled"
+    Write-Host "Speaker detection (diarization) is disabled" -ForegroundColor Yellow
+}
+
+# Add batch mode flag if specified
+if ($batchMode) {
+    Write-Host "Running in batch mode - processing all files without manual selection" -ForegroundColor Cyan
+    $cmdArgs += "--batch"
 }
 
 # Add other arguments
@@ -103,7 +113,7 @@ foreach ($arg in $otherArgs) {
 
 # Use Poetry to run the script
 if ($cmdArgs.Count -eq 0 -and $otherArgs.Count -eq 0) {
-    Write-Host "Entering interactive mode..."
+    Write-Host "Entering interactive mode..." -ForegroundColor Cyan
     # Add diarize flag to interactive mode too
     if (-not $noDiarize) {
         poetry run python -m src.speech_to_text --interactive --diarize
