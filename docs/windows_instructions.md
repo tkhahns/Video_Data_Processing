@@ -57,21 +57,14 @@ choco install ffmpeg
 ffmpeg -version
 ```
 
-### Additional Dependencies for WhisperX
+### Hugging Face Authentication
 
-WhisperX provides enhanced transcription with improved timestamp alignment:
+The pipeline requires a Hugging Face token for accessing AI models:
 
-```powershell
-# After installing the base dependencies with Poetry:
-# Install ffmpeg (if not already done)
-choco install ffmpeg
-
-# Additional system dependencies
-pip install faster-whisper
-
-# Make sure you have the latest version 
-poetry update
-```
+1. Create a free account at [Hugging Face](https://huggingface.co/join)
+2. Generate a token at https://huggingface.co/settings/tokens
+3. Keep your token handy to enter when prompted by the pipeline
+4. **Important**: For security, tokens are never saved to disk and are only used during the current session
 
 ---
 
@@ -104,18 +97,20 @@ poetry install --with download
 
 ## Complete Processing Pipeline
 
-The `run_all.ps1` script provides a complete end-to-end pipeline that:
-1. Downloads videos from SharePoint
-2. Extracts speech from the videos
-3. Transcribes the speech to text
-4. Analyzes emotions and body poses in the videos
+The `run_all.ps1` script provides a complete end-to-end pipeline that sequentially:
+1. Prompts for your Hugging Face token (one-time, not saved)
+2. Downloads videos from SharePoint
+3. Extracts speech from the videos
+4. Transcribes the speech to text
+5. Analyzes emotions and body poses in the videos
+6. Reports the total processing time and results
 
 All outputs are organized in timestamped directories for easy tracking.
 
 ### Running the Complete Pipeline
 
 ```powershell
-# Run the pipeline (will prompt for SharePoint URL)
+# Run the pipeline (will prompt for Hugging Face token and SharePoint URL)
 .\run_all.ps1
 
 # Or specify the SharePoint URL directly
@@ -139,8 +134,6 @@ Each component can also be run separately if you need to process only specific s
 
 ### 1. Download Videos from SharePoint
 
-The download module now uses a manual approach where you interact with SharePoint in the browser:
-
 ```powershell
 # Run with Poetry (interactive mode)
 poetry run .\scripts\windows\run_download_videos.ps1
@@ -154,20 +147,6 @@ poetry run .\scripts\windows\run_download_videos.ps1 --list-only
 poetry run .\scripts\windows\run_download_videos.ps1 --debug
 ```
 
-This will:
-1. Open a browser window with the SharePoint site
-2. Display all available files 
-3. Provide instructions for manual downloading:
-   - For individual files: right-click and select "Download"
-   - For multiple files: select files using checkboxes and download as ZIP
-4. Monitor your system's Downloads folder for:
-   - Downloaded video files - moved automatically to the output directory
-   - ZIP files - extracted automatically to get video files, then ZIP is deleted
-5. Automatically complete when all downloads are processed (no need to stop manually)
-6. You can press Ctrl+C at any time to stop the monitoring and continue the pipeline
-
-The process will automatically proceed to the next step in the pipeline once downloads are complete.
-
 ### 2. Extract Speech from Videos
 
 ```powershell
@@ -176,6 +155,9 @@ poetry run .\scripts\windows\run_separate_speech.ps1
 
 # With specific input and output directories
 poetry run .\scripts\windows\run_separate_speech.ps1 --input-dir ".\my-videos" --output-dir ".\my-speech"
+
+# Batch mode (process all files without manual selection)
+poetry run .\scripts\windows\run_separate_speech.ps1 --input-dir ".\my-videos" --output-dir ".\my-speech" --batch
 
 # Additional options
 poetry run .\scripts\windows\run_separate_speech.ps1 --file-type wav  # Output format: wav, mp3, or both
@@ -191,35 +173,43 @@ poetry run .\scripts\windows\run_speech_to_text.ps1
 # With specific input and output directories
 poetry run .\scripts\windows\run_speech_to_text.ps1 --input-dir ".\my-speech" --output-dir ".\my-transcripts"
 
-# Additional options
-poetry run .\scripts\windows\run_speech_to_text.ps1 --language fr  # Language (default: en)
-poetry run .\scripts\windows\run_speech_to_text.ps1 --output-format txt  # Output format: srt, txt, or both
-poetry run .\scripts\windows\run_speech_to_text.ps1 --model whisperx  # Transcription model
+# Batch mode
+poetry run .\scripts\windows\run_speech_to_text.ps1 --input-dir ".\my-speech" --output-dir ".\my-transcripts" --batch
 
-# Using WhisperX for enhanced transcription with speaker detection
-poetry run .\scripts\windows\run_speech_to_text.ps1 --model whisperx --diarize
-
-# For batch processing with WhisperX
-poetry run .\scripts\windows\run_speech_to_text.ps1 --model whisperx --output-format both --input-dir ".\my-speech"
+# With speaker diarization (enabled by default)
+poetry run .\scripts\windows\run_speech_to_text.ps1 --input-dir ".\my-speech" --output-dir ".\my-transcripts" --diarize
 ```
 
 ### 4. Analyze Emotions and Body Poses
 
 ```powershell
-# Interactive mode
+# Interactive mode (will prompt for Hugging Face token)
 poetry run .\scripts\windows\run_emotion_and_pose_recognition.ps1
 
 # With specific input and output directories
 poetry run .\scripts\windows\run_emotion_and_pose_recognition.ps1 --input-dir ".\my-videos" --output-dir ".\my-emotions"
 
-# Emotion and pose recognition includes pose estimation by default
-# To disable pose estimation (not recommended)
-poetry run .\scripts\windows\run_emotion_and_pose_recognition.ps1 --no-pose
+# Batch mode
+poetry run .\scripts\windows\run_emotion_and_pose_recognition.ps1 --input-dir ".\my-videos" --output-dir ".\my-emotions" --batch
 ```
 
 ---
 
 ## Advanced Usage
+
+### Batch Processing
+
+For automated processing without manual file selection:
+
+```powershell
+# Run entire pipeline in batch mode
+.\run_all.ps1 --url "YOUR_URL" --batch
+
+# Run individual components in batch mode
+poetry run .\scripts\windows\run_separate_speech.ps1 --input-dir ".\my-videos" --batch
+poetry run .\scripts\windows\run_speech_to_text.ps1 --input-dir ".\my-speech" --batch
+poetry run .\scripts\windows\run_emotion_and_pose_recognition.ps1 --input-dir ".\my-videos" --batch
+```
 
 ### Running as Python Modules
 
@@ -239,9 +229,11 @@ poetry run python -m src.speech_to_text --input-dir ".\my-speech" --output-dir "
 poetry run python -m src.emotion_and_pose_recognition.cli --input-dir ".\my-videos" --output-dir ".\my-emotions" --with-pose
 ```
 
-### Troubleshooting
+---
 
-#### PowerShell Execution Policy
+## Troubleshooting
+
+### PowerShell Execution Policy
 
 If you get an error related to script execution policy:
 
@@ -250,7 +242,15 @@ If you get an error related to script execution policy:
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
 
-#### Missing Dependencies
+### Hugging Face Token Issues
+
+If you encounter issues with Hugging Face authentication:
+
+1. Ensure you have a valid token from https://huggingface.co/settings/tokens
+2. The token is only used for the current session and is never saved to disk
+3. If you need to use the token in multiple terminal sessions, you'll need to enter it each time
+
+### Missing Dependencies
 
 If you encounter missing dependency errors:
 
@@ -262,7 +262,7 @@ poetry update
 poetry install --with common --with speech --with emotion --with download
 ```
 
-#### Path Issues
+### Path Issues
 
 Windows paths use backslashes (`\`), but many Python libraries also accept forward slashes (`/`). If you encounter path issues:
 
@@ -274,20 +274,6 @@ $path = "C:\\Users\\username\\Documents"
 $path = 'C:\Users\username\Documents'
 ```
 
-### WhisperX Issues
-
-If you encounter issues with WhisperX:
-
-1. Ensure you have a compatible NVIDIA GPU and updated drivers for GPU acceleration
-2. For CPU-only operation, use the `--device cpu` flag
-3. If you see CUDA out of memory errors, try setting `--batch-size 8` (default is 16)
-4. For alignment issues: `--no-align` will disable the alignment phase
-
-```powershell
-# Example with troubleshooting options
-poetry run python -m src.speech_to_text --model whisperx --device cpu --batch-size 8 --no-align
-```
-
 ---
 
 ## Additional Resources
@@ -295,4 +281,4 @@ poetry run python -m src.speech_to_text --model whisperx --device cpu --batch-si
 - [Project Documentation](https://github.com/username/Video_Data_Processing/docs)
 - [Poetry Documentation](https://python-poetry.org/docs/)
 - [FFmpeg Documentation](https://ffmpeg.org/documentation.html)
-- [Speech Processing Resources](https://github.com/speechbrain/speechbrain)
+- [Hugging Face](https://huggingface.co/) - AI model repository

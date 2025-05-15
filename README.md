@@ -10,6 +10,8 @@ A comprehensive toolkit for processing video data, extracting speech, generating
 - **Emotion & Pose Recognition**: Analyze facial emotions and body poses in videos
 - **Sequential Processing Pipeline**: Process videos through all steps automatically
 - **Batch Processing**: Process multiple videos without manual intervention
+- **Secure Authentication**: Hugging Face tokens used only during session (never stored)
+- **Robust Audio Processing**: Enhanced algorithms to prevent file corruption
 
 ## Getting Started
 
@@ -47,8 +49,9 @@ The simplest way to use this toolkit is through the all-in-one pipeline script:
 This will:
 1. Prompt for your Hugging Face token (used in-memory only, never saved to disk)
 2. Guide you through downloading videos from SharePoint
-3. Process the videos through all pipeline stages
+3. Process the videos through all pipeline stages sequentially
 4. Output results in timestamped directories
+5. Report total processing time and success status
 
 ## Documentation
 
@@ -92,6 +95,12 @@ poetry run scripts/macos/run_separate_speech.sh --input-dir "./my-videos" --batc
 poetry run scripts/macos/run_speech_to_text.sh --input-dir "./my-speech" --batch
 poetry run scripts/macos/run_emotion_and_pose_recognition.sh --input-dir "./my-videos" --batch
 ```
+
+## Known Issues & Solutions
+
+- **Audio File Corruption**: Enhanced error handling prevents corrupted audio files
+- **RTTM Errors**: Fixed issues with spaces in filenames for speaker diarization
+- **Memory Management**: Improved memory cleanup between processing steps
 
 ## License
 
