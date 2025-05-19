@@ -6,3 +6,4 @@ archive/models/downloaded
 .DS_Store
 output
 models
+models/downloaded
