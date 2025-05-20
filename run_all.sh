@@ -188,6 +188,19 @@ if command -v poetry &>/dev/null; then
         echo "- Speech-to-Text: $([ $TRANSCRIPT_EXIT -eq 0 ] && echo "✅ Success" || echo "❌ Failed")"
         echo "- Emotion and Pose Recognition: $([ $EMOTION_EXIT -eq 0 ] && echo "✅ Success" || echo "❌ Failed")"
         
+        # Create pipeline_output.csv that merges all results
+        echo -e "\n[+] Creating pipeline output CSV..."
+        poetry run python -c "from src.speech_to_text.utils import create_pipeline_output; create_pipeline_output('$RESULTS_DIR')"
+        CSV_EXIT=$?
+        
+        if [ $CSV_EXIT -eq 0 ]; then
+            echo "✅ Pipeline output CSV created successfully"
+            echo "- CSV output: $RESULTS_DIR/pipeline_output.csv"
+            echo "- Summary: $RESULTS_DIR/pipeline_summary.txt"
+        else
+            echo "❌ Failed to create pipeline output CSV"
+        fi
+
         # Calculate total process time
         END_TIME=$(date +%s)
         ELAPSED_TIME=$((END_TIME - START_TIME))
