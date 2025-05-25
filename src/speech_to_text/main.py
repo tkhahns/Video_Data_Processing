@@ -14,33 +14,17 @@ if __name__ == "__main__" or os.path.basename(sys.argv[0]) == "__main__.py":
     parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
     sys.path.insert(0, parent_dir)
     
-    from src.speech_to_text import transcription, utils
+    from src.speech_to_text import transcription, speech_features
     from src.speech_to_text import DEFAULT_MODELS_DIR, DEFAULT_OUTPUT_DIR, DEFAULT_AUDIO_DIR
     from src.speech_to_text import DEFAULT_MODEL, DEFAULT_LANGUAGE, DEFAULT_SEGMENT_SIZE, SUPPORTED_MODELS
-    
-    # Import from utils package 
-    from utils import colored_logging, init_logging
 else:
     # Use relative imports when imported as a module
-    from . import transcription, utils
+    from . import transcription, speech_features
     from . import DEFAULT_MODELS_DIR, DEFAULT_OUTPUT_DIR, DEFAULT_AUDIO_DIR
     from . import DEFAULT_MODEL, DEFAULT_LANGUAGE, DEFAULT_SEGMENT_SIZE, SUPPORTED_MODELS
-    
-    # Try using different approaches for importing the logging modules
-    try:
-        # First try absolute imports
-        from utils import colored_logging, init_logging
-    except ImportError:
-        # Fall back to relative imports
-        try:
-            from ...utils import colored_logging, init_logging
-        except ImportError:
-            # Last resort: add parent directory to sys.path
-            sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
-            from utils import colored_logging, init_logging
 
 # Get logger for this module
-logger = init_logging.get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 def select_output_format():
     """
@@ -104,7 +88,7 @@ def select_files(directory: Path, file_type: str = "audio"):
     # Print the list of available files
     print(f"\nAvailable {file_type} files:")
     for i, file_path in enumerate(all_files, 1):
-        is_separated = utils.is_separated_speech_file(file_path)
+        is_separated = speech_features.is_separated_speech_file(file_path)
         source_indicator = " (separated speech)" if is_separated else ""
         print(f"{i}. {file_path}{source_indicator}")
     
@@ -150,7 +134,7 @@ def select_files(directory: Path, file_type: str = "audio"):
             # Print the selected files
             print(f"\nSelected {len(selected_files)} files:")
             for i, file_path in enumerate(selected_files, 1):
-                is_separated = utils.is_separated_speech_file(file_path)
+                is_separated = speech_features.is_separated_speech_file(file_path)
                 source_indicator = " (separated speech)" if is_separated else ""
                 print(f"{i}. {file_path}{source_indicator}")
             
@@ -328,6 +312,11 @@ def main():
         action="store_true",
         help="Process all files without manual selection"
     )
+    parser.add_argument(
+        "--extract-features",
+        action="store_true",
+        help="Extract audio features and save as CSV files in the audio directory"
+    )
     
     args = parser.parse_args()
     
@@ -337,10 +326,10 @@ def main():
         logging.getLogger().setLevel(logging.DEBUG)
     
     # Ensure output directory exists
-    utils.ensure_dir_exists(args.output_dir)
+    speech_features.ensure_dir_exists(args.output_dir)
     
     # Check for dependencies
-    if not utils.check_dependencies():
+    if not speech_features.check_dependencies():
         logger.error("Missing dependencies. Please install required packages.")
         return 1
     
@@ -363,7 +352,7 @@ def main():
                 args.input = [str(separated_speech_dir)]
     
     # Find all available audio files
-    all_audio_files = utils.find_audio_files(
+    all_audio_files = speech_features.find_audio_files(
         args.input, 
         args.recursive,
         DEFAULT_AUDIO_DIR
@@ -404,7 +393,7 @@ def main():
     
     # Create output directory
     output_dir = Path(args.output_dir)
-    utils.ensure_dir_exists(output_dir)
+    speech_features.ensure_dir_exists(output_dir)
     
     # Check for diarization dependencies if requested
     if use_diarization:
@@ -416,13 +405,58 @@ def main():
             logger.warning("Install with: pip install pyannote.audio")
             use_diarization = False
     
+    # Extract audio features if requested
+    if args.extract_features:
+        logger.info("Extracting audio features from all audio files")
+        
+        features_extracted = 0
+        for audio_file in tqdm.tqdm(all_audio_files, desc="Extracting audio features"):
+            try:
+                # Create output filename for the features CSV
+                feature_output = Path(os.path.dirname(audio_file)) / f"{audio_file.stem}_features.csv"
+                
+                # Extract all features using speech_features instead of utils
+                logger.info(f"Extracting features from {audio_file}")
+                audio_features = speech_features.extract_audio_features(str(audio_file))
+                emotion_features = speech_features.extract_speech_emotion_features(str(audio_file))
+                opensmile_features = speech_features.extract_opensmile_features(str(audio_file))
+                
+                # Combine all features
+                all_features = {
+                    'file_name': audio_file.name,
+                    **audio_features,
+                    **emotion_features,
+                    **opensmile_features
+                }
+                
+                # Remove any list values as they won't convert to CSV properly
+                filtered_features = {}
+                for key, value in all_features.items():
+                    if not isinstance(value, list):
+                        filtered_features[key] = value
+                
+                # Create DataFrame and save to CSV
+                import pandas as pd
+                df = pd.DataFrame([filtered_features])
+                df.to_csv(feature_output, index=False)
+                
+                logger.info(f"Features saved to {feature_output}")
+                features_extracted += 1
+                
+            except Exception as e:
+                logger.error(f"Error extracting features from {audio_file}: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+        
+        logger.info(f"Extracted features for {features_extracted} audio files")
+    
     # Process each audio file
     for audio_file in tqdm.tqdm(all_audio_files, desc="Transcribing audio files"):
         logger.info(f"Processing {audio_file}")
         
         try:
             # Generate output path for this audio file
-            output_path = utils.get_output_path(audio_file, output_dir)
+            output_path = speech_features.get_output_path(audio_file, output_dir)
             
             # Transcribe the audio file
             result = transcription.transcribe_audio(

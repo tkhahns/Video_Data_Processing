@@ -161,7 +161,7 @@ if command -v poetry &>/dev/null; then
         # Only proceed with transcription if speech separation was successful
         if [ $SPEECH_EXIT -eq 0 ]; then
             echo -e "\n[6/6] Running speech-to-text on separated audio..."
-            poetry run scripts/macos/run_speech_to_text.sh --input-dir "$SPEECH_OUTPUT_DIR" --output-dir "$TRANSCRIPT_OUTPUT_DIR" --diarize $BATCH_FLAG
+            poetry run scripts/macos/run_speech_to_text.sh --input-dir "$SPEECH_OUTPUT_DIR" --output-dir "$TRANSCRIPT_OUTPUT_DIR" --diarize --extract-features $BATCH_FLAG
             TRANSCRIPT_EXIT=$?
         else
             echo -e "\nSpeech separation failed with exit code $SPEECH_EXIT"
@@ -190,7 +190,7 @@ if command -v poetry &>/dev/null; then
         
         # Create pipeline_output.csv that merges all results
         echo -e "\n[+] Creating pipeline output CSV..."
-        poetry run python -c "from src.speech_to_text.utils import create_pipeline_output; create_pipeline_output('$RESULTS_DIR')"
+        poetry run python -c "from src.speech_to_text.speech_features import create_pipeline_output; create_pipeline_output('$RESULTS_DIR')"
         CSV_EXIT=$?
         
         if [ $CSV_EXIT -eq 0 ]; then

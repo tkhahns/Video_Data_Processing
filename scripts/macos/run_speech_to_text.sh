@@ -44,6 +44,7 @@ if [ "$1" == "--help" ] || [ "$1" == "-h" ]; then
     echo "  --interactive        Force interactive audio selection mode"
     echo "  --no-diarize         Disable speaker diarization (speaker detection is enabled by default)"
     echo "  --batch              Enable batch mode to process all files without manual selection"
+    echo "  --extract-features   Extract audio features and save as CSV files in the audio directory"
     echo "  --help               Show this help message"
     echo ""
     echo "If run without arguments, the script will show an interactive audio selection menu."
@@ -55,6 +56,7 @@ input_dir=""
 output_dir=""
 no_diarize=false
 batch_mode=false
+extract_features=true  # Always extract features by default
 other_args=()
 i=1
 while [ $i -le $# ]; do
@@ -69,6 +71,8 @@ while [ $i -le $# ]; do
         no_diarize=true
     elif [ "$arg" == "--batch" ]; then
         batch_mode=true
+    elif [ "$arg" == "--extract-features" ]; then
+        extract_features=true  # Redundant now but kept for backward compatibility
     else
         other_args+=("$arg")
     fi
@@ -105,6 +109,10 @@ if [ "$batch_mode" = true ]; then
     echo "Running in batch mode - processing all files without manual selection"
     cmd_args+=("--batch")
 fi
+
+# Add feature extraction flag - now always enabled
+echo "Audio feature extraction is enabled - CSV files will be created in the audio directory"
+cmd_args+=("--extract-features")
 
 # Add other arguments
 for arg in "${other_args[@]}"; do
