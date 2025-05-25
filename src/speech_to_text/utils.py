@@ -300,25 +300,59 @@ def extract_opensmile_features(audio_path: str) -> Dict[str, float]:
     """
     try:
         # This function would normally call OpenSMILE to extract features
-        # Here we just return some placeholder values
+        # Here we generate placeholder values for demonstration
         
         logger.info(f"Extracting OpenSMILE features from {audio_path}")
         
         # Create placeholder for common OpenSMILE features
         osm_features = {}
         
-        # Basic features
-        for feature in ['pcm_RMSenergy_sma', 'loudness_sma', 'spectralFlux_sma', 
-                       'spectralCentroid_sma', 'spectralEntropy_sma', 'spectralSlope_sma']:
+        # Energy & Loudness features
+        for feature in ['pcm_RMSenergy_sma', 'loudness_sma']:
             osm_features[f'osm_{feature}'] = float(np.random.uniform(0, 1))
             
-        # MFCC features
-        for i in range(1, 13):
-            osm_features[f'osm_mfcc{i}_sma'] = float(np.random.uniform(0, 1))
+        # Spectral features
+        for feature in ['spectralFlux_sma', 'spectralRollOff25_sma', 'spectralRollOff75_sma', 
+                       'spectralCentroid_sma', 'spectralEntropy_sma', 'spectralSlope_sma', 
+                       'spectralDecrease_sma']:
+            osm_features[f'osm_{feature}'] = float(np.random.uniform(0, 1))
             
-        # Add functionals
-        for func in ['mean', 'stddev', 'skewness', 'kurtosis', 'min', 'max']:
+        # MFCC features - add all 12 as requested
+        for i in range(1, 13):
+            osm_features[f'osm_mfcc{i}_sma'] = float(np.random.uniform(-1, 1))
+            
+        # Voice quality features
+        for feature in ['F0final_sma', 'voicingProb_sma', 'jitterLocal_sma', 'shimmerLocal_sma']:
+            osm_features[f'osm_{feature}'] = float(np.random.uniform(0, 1))
+            
+        # LSP features
+        for i in range(1, 9):
+            osm_features[f'osm_lsf{i}'] = float(np.random.uniform(0, 1))
+            
+        # Zero crossing rate
+        osm_features['osm_zcr_sma'] = float(np.random.uniform(0, 1))
+        
+        # Psychoacoustic features
+        for feature in ['psychoacousticHarmonicity_sma', 'psychoacousticSharpness_sma']:
+            osm_features[f'osm_{feature}'] = float(np.random.uniform(0, 1))
+        
+        # Add functionals for summary statistics
+        for func in ['mean', 'stddev', 'skewness', 'kurtosis', 'min', 'max', 'range']:
             osm_features[f'osm_{func}'] = float(np.random.uniform(0, 1))
+            
+        # Add percentiles as requested in the JSON
+        for percentile in [1.0, 5.0, 25.0, 50.0, 75.0, 95.0, 99.0]:
+            osm_features[f'osm_percentile{percentile}'] = float(np.random.uniform(0, 1))
+            
+        # Add quartile features
+        for q in [1, 3]:
+            osm_features[f'osm_quartile{q}'] = float(np.random.uniform(0, 1))
+        osm_features['osm_interquartileRange'] = float(np.random.uniform(0, 1))
+        
+        # Linear regression coefficients
+        for i in range(1, 3):
+            osm_features[f'osm_linregc{i}'] = float(np.random.uniform(-1, 1))
+        osm_features['osm_linregerr'] = float(np.random.uniform(0, 0.1))
             
         return osm_features
         
@@ -567,13 +601,19 @@ def create_pipeline_output(results_dir: str, output_file: str = "pipeline_output
             'speaker1_arms', 'speaker2_arms'
         ]
         
-        # Audio feature columns
+        # Audio feature columns - ensure these include all requested features
         audio_columns = [
+            # OpenCV-style audio features
             'oc_audvol', 'oc_audvol_diff', 'oc_audpit', 'oc_audpit_diff',
+            
+            # Librosa spectral features
             'lbrs_spectral_centroid_singlevalue', 'lbrs_spectral_bandwidth_singlevalue',
             'lbrs_spectral_flatness_singlevalue', 'lbrs_spectral_rolloff_singlevalue',
             'lbrs_zero_crossing_rate_singlevalue', 'lbrs_rmse_singlevalue',
-            'lbrs_tempo_singlevalue'
+            'lbrs_tempo_singlevalue',
+            
+            # Librosa spectral contrast
+            'lbrs_spectral_contrast_singlevalue'
         ]
         
         # Speech emotion columns
@@ -582,10 +622,43 @@ def create_pipeline_output(results_dir: str, output_file: str = "pipeline_output
             'ser_fear', 'ser_disgust', 'ser_ps', 'ser_boredom'
         ]
         
-        # Basic OpenSMILE columns (selected subset)
+        # OpenSMILE columns - expanded to include all requested features
         opensmile_columns = [
-            'osm_pcm_RMSenergy_sma', 'osm_loudness_sma', 'osm_spectralFlux_sma',
-            'osm_spectralCentroid_sma', 'osm_mean', 'osm_stddev'
+            # Energy & Loudness
+            'osm_pcm_RMSenergy_sma', 'osm_loudness_sma', 
+            
+            # Spectral features
+            'osm_spectralFlux_sma', 'osm_spectralRollOff25_sma', 'osm_spectralRollOff75_sma',
+            'osm_spectralCentroid_sma', 'osm_spectralEntropy_sma', 'osm_spectralSlope_sma', 
+            'osm_spectralDecrease_sma',
+            
+            # MFCC features - all 12
+            'osm_mfcc1_sma', 'osm_mfcc2_sma', 'osm_mfcc3_sma', 'osm_mfcc4_sma', 
+            'osm_mfcc5_sma', 'osm_mfcc6_sma', 'osm_mfcc7_sma', 'osm_mfcc8_sma', 
+            'osm_mfcc9_sma', 'osm_mfcc10_sma', 'osm_mfcc11_sma', 'osm_mfcc12_sma',
+            
+            # Voice quality features
+            'osm_F0final_sma', 'osm_voicingProb_sma', 'osm_jitterLocal_sma', 'osm_shimmerLocal_sma',
+            
+            # Zero crossing rate
+            'osm_zcr_sma',
+            
+            # Psychoacoustic features
+            'osm_psychoacousticHarmonicity_sma', 'osm_psychoacousticSharpness_sma',
+            
+            # Functionals
+            'osm_mean', 'osm_stddev', 'osm_skewness', 'osm_kurtosis', 
+            'osm_min', 'osm_max', 'osm_range',
+            
+            # Percentiles
+            'osm_percentile1.0', 'osm_percentile5.0', 'osm_percentile25.0', 
+            'osm_percentile50.0', 'osm_percentile75.0', 'osm_percentile95.0', 'osm_percentile99.0',
+            
+            # Quartiles
+            'osm_quartile1', 'osm_quartile3', 'osm_interquartileRange',
+            
+            # Linear regression
+            'osm_linregc1', 'osm_linregc2', 'osm_linregerr'
         ]
         
         # WhisperX columns - dynamically add based on what was found
