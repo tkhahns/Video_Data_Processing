@@ -18,6 +18,9 @@ from .body_pose.utils import overlay_pose_text, save_pose_data, draw_pose_skelet
 POSE_AVAILABLE = True
 
 
+# Import the new video feature extraction module
+from . import video_features
+
 # Try importing from utils package
 try:
     from utils import init_logging
@@ -46,7 +49,8 @@ POSE_CONNECTIONS = [
 
 def process_video(input_path, output_path=None, log_path=None, show_preview=False, 
                   skip_frames=0, backend="opencv", model_name="emotion", log_only=False,
-                  with_pose=True, pose_log_path=None):
+                  with_pose=True, pose_log_path=None, extract_features=False,
+                  video_features_path=None, video_feature_models=None):
     """
     Process an input video to detect faces and recognize emotions frame by frame.
     Optionally saves annotated video and logs emotions every 1 second.
@@ -62,6 +66,9 @@ def process_video(input_path, output_path=None, log_path=None, show_preview=Fals
         log_only (bool): If True, only generate the log file, skip video output entirely.
         with_pose (bool): If True, also perform body pose estimation.
         pose_log_path (str, optional): Path to save pose data log (JSON).
+        extract_features (bool): If True, extract advanced video features.
+        video_features_path (str, optional): Path to save video features.
+        video_feature_models (list, optional): List of video feature models to use.
     
     Returns:
         bool: True if processing completed successfully, False otherwise.
@@ -99,6 +106,16 @@ def process_video(input_path, output_path=None, log_path=None, show_preview=Fals
         input_name = os.path.splitext(os.path.basename(input_path))[0]
         pose_log_path = os.path.join(log_dir, f"{input_name}_pose.json")
         logger.info(f"No pose log path specified. Will use: {pose_log_path}")
+    
+    # Get video file name for inclusion in features
+    video_filename = os.path.basename(input_path)
+    video_name = os.path.splitext(video_filename)[0]
+    
+    # Create default video features path if needed
+    if extract_features and video_features_path is None:
+        log_dir = os.path.dirname(log_path) if log_path else os.path.join(os.path.dirname(input_path), "emotions_output")
+        video_features_path = os.path.join(log_dir, f"{video_name}_video_features")
+        logger.info(f"No video features path specified. Will use: {video_features_path}")
     
     # Set output_path to None if log_only mode is enabled
     if log_only:
@@ -619,6 +636,33 @@ def process_video(input_path, output_path=None, log_path=None, show_preview=Fals
 
         logger.info(f"Processed {frame_count} frames")
         
+        # Extract video features if requested
+        if extract_features:
+            logger.info(f"Extracting advanced video features for {video_name}...")
+            try:
+                # Define default models if not specified
+                if video_feature_models is None:
+                    video_feature_models = ["mediapipe", "pyfeat"]  # Start with the most reliable models
+                
+                # Extract features
+                feature_result = video_features.extract_video_features(
+                    video_path=input_path,
+                    output_dir=os.path.dirname(video_features_path),
+                    models=video_feature_models,
+                    use_gpu=True,
+                    sample_rate=skip_frames + 1,  # Skip frames for efficiency
+                    video_name=video_name  # Pass the video name for inclusion in features
+                )
+                
+                # Save full features to output path
+                logger.info(f"Video feature extraction completed successfully")
+                logger.info(f"Features saved to {video_features_path}_aggregate.csv and {video_features_path}_full.json")
+                
+            except Exception as e:
+                logger.error(f"Error extracting video features: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+        
         # Save pose data log if requested
         if with_pose and pose_log_path and speaker_pose_data_by_second:
             try:
@@ -674,7 +718,8 @@ def process_video(input_path, output_path=None, log_path=None, show_preview=Fals
     logger.info("Video processing complete")
     return True
 
-def batch_process_videos(input_dir, output_dir, log_dir=None, file_extension="mp4", with_pose=True):
+def batch_process_videos(input_dir, output_dir, log_dir=None, file_extension="mp4", with_pose=True,
+                         extract_features=False, video_features_dir=None, video_feature_models=None):
     """
     Process all videos with the specified extension in the input directory.
     
@@ -684,6 +729,9 @@ def batch_process_videos(input_dir, output_dir, log_dir=None, file_extension="mp
         log_dir (str, optional): Directory to save emotion logs
         file_extension (str): File extension to filter input videos
         with_pose (bool): Whether to perform pose estimation
+        extract_features (bool): If True, extract advanced video features
+        video_features_dir (str, optional): Directory to save video features
+        video_feature_models (list, optional): List of feature models to use
         
     Returns:
         dict: Dictionary with processing results for each file
@@ -701,6 +749,12 @@ def batch_process_videos(input_dir, output_dir, log_dir=None, file_extension="mp
     if log_dir and not os.path.exists(log_dir):
         os.makedirs(log_dir)
         logger.info(f"Created log directory: {log_dir}")
+    
+    # Create video features directory if needed
+    if extract_features and not video_features_dir:
+        video_features_dir = os.path.join(log_dir, "video_features") if log_dir else os.path.join(output_dir, "video_features")
+        os.makedirs(video_features_dir, exist_ok=True)
+        logger.info(f"Created video features directory: {video_features_dir}")
     
     # Find all video files
     input_files = []
@@ -724,6 +778,11 @@ def batch_process_videos(input_dir, output_dir, log_dir=None, file_extension="mp
         log_path = os.path.join(log_dir, f"{base_name}_emotions.csv") if log_dir else None
         pose_log_path = os.path.join(log_dir, f"{base_name}_pose.json") if log_dir and with_pose else None
         
+        # Set up video features path if enabled
+        video_features_path = None
+        if extract_features and video_features_dir:
+            video_features_path = os.path.join(video_features_dir, f"{base_name}_video_features")
+        
         logger.info(f"Processing {video_name}...")
         success = process_video(
             input_path, 
@@ -731,7 +790,10 @@ def batch_process_videos(input_dir, output_dir, log_dir=None, file_extension="mp
             log_path,
             backend="opencv",  # Explicitly set backend to most reliable option
             with_pose=with_pose,
-            pose_log_path=pose_log_path
+            pose_log_path=pose_log_path,
+            extract_features=extract_features,
+            video_features_path=video_features_path,
+            video_feature_models=video_feature_models
         )
         results[video_name] = success
         

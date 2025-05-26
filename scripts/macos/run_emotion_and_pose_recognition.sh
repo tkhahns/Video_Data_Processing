@@ -61,26 +61,30 @@ fi
 
 # Help message if --help flag is provided
 if [ "$1" == "--help" ] || [ "$1" == "-h" ]; then
-    echo -e "\nUsage: ./run_emotion_and_pose_recognition.sh [options] <video_file(s)>"
+    echo -e "\nUsage: ./run_emotion_and_pose_recognition.sh [options] <video_file>"
     echo ""
     echo "Options:"
     echo "  --input-dir DIR      Directory containing input video files"
+    echo "  --video FILE         Single video file to process"
     echo "  --output-dir DIR     Directory to save emotion analysis results (default: ./output/emotions)"
-    echo "  --batch              Process all videos in input directory"
+    echo "  --batch              Process all videos in input directory without prompting"
     echo "  --interactive        Force interactive video selection mode"
     echo "  --single-speaker     Disable multi-speaker tracking (only track one person)"
     echo "  --debug              Enable debug logging"
     echo "  --help               Show this help message"
     echo ""
+    echo "Note: Feature extraction is always enabled by default."
     echo "By default, the script processes videos with pose estimation and multi-speaker tracking."
     echo "If run without arguments, the script will show an interactive video selection menu."
     exit 0
 fi
 
-# Look for input directory in arguments
+# Look for input parameters in arguments
 input_dir=""
+single_video=""
 output_dir=""
 batch_mode=false
+extract_features=true  # Always extract features by default
 other_args=()
 i=1
 while [ $i -le $# ]; do
@@ -88,11 +92,16 @@ while [ $i -le $# ]; do
     if [ "$arg" == "--input-dir" ] && [ $i -lt $# ]; then
         i=$((i+1))
         input_dir="${!i}"
+    elif [ "$arg" == "--video" ] && [ $i -lt $# ]; then
+        i=$((i+1))
+        single_video="${!i}"
     elif [ "$arg" == "--output-dir" ] && [ $i -lt $# ]; then
         i=$((i+1))
         output_dir="${!i}"
     elif [ "$arg" == "--batch" ]; then
         batch_mode=true
+    elif [ "$arg" == "--extract-features" ]; then
+        extract_features=true  # Redundant now but kept for backward compatibility
     else
         other_args+=("$arg")
     fi
@@ -101,6 +110,7 @@ done
 
 # Run the emotion and pose recognition script
 echo -e "\n[2/2] Running emotion and pose recognition analysis..."
+echo "Feature extraction is enabled - Video features will be extracted"
 
 # Build command based on input parameters
 cmd_args=()
@@ -111,10 +121,19 @@ if [ -n "$input_dir" ]; then
     cmd_args+=("--input-dir" "$input_dir")
 fi
 
+# Add single video if specified
+if [ -n "$single_video" ]; then
+    echo "Processing single video: $single_video"
+    cmd_args+=("--video" "$single_video")
+fi
+
 # Add output directory if specified
 if [ -n "$output_dir" ]; then
     cmd_args+=("--output-dir" "$output_dir")
 fi
+
+# Always add extract-features flag
+cmd_args+=("--extract-features")
 
 # Always add pose estimation by default (unless --no-pose is explicitly included)
 NO_POSE_PRESENT=false
@@ -155,8 +174,8 @@ done
 
 # Use Poetry to run the script
 if [ ${#cmd_args[@]} -eq 0 ] && [ ${#other_args[@]} -eq 0 ]; then
-    echo "Entering interactive mode with pose estimation and multi-speaker tracking..."
-    poetry run python -m src.emotion_and_pose_recognition.cli --with-pose --multi-speaker --interactive
+    echo "Entering interactive mode with pose estimation, multi-speaker tracking, and feature extraction..."
+    poetry run python -m src.emotion_and_pose_recognition.cli --with-pose --multi-speaker --interactive --extract-features
 else
     # Otherwise, pass all arguments to the script
     poetry run python -m src.emotion_and_pose_recognition.cli "${cmd_args[@]}"
