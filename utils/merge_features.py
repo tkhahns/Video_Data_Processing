@@ -1,288 +1,307 @@
 """
-Pipeline-level utilities for combining and processing data from multiple modules.
+Functions to merge features from different sources into a single CSV file.
 """
-
 import os
-import sys
-import logging
-import json
-import pandas as pd
-import numpy as np
-from pathlib import Path
-from typing import Dict, Any, List, Optional
 import glob
+import pandas as pd
+import logging
+import datetime
+from pathlib import Path
 
-# Configure logging
 logger = logging.getLogger(__name__)
 
-def create_pipeline_output(results_dir: str, output_file: str = "pipeline_output.csv") -> bool:
+def create_summary_report(output_data, videos, all_csv_files, summary_file):
     """
-    Create a combined pipeline output CSV by merging speech transcripts, 
-    audio features, and video features from the pipeline directories.
+    Create a summary report of the merged features.
     
     Args:
-        results_dir (str): Root directory containing pipeline results
-        output_file (str): Name of the output file to create
-    
+        output_data: DataFrame containing the merged features
+        videos: Dictionary mapping video names to their CSV files
+        all_csv_files: List of all CSV files that were processed
+        summary_file: Path to the output summary file
+        
     Returns:
-        bool: True if successful
-    """
-    logger.info(f"Creating pipeline output from {results_dir}")
-    
-    # Define directory paths
-    speech_dir = os.path.join(results_dir, "speech")
-    transcript_dir = os.path.join(results_dir, "transcripts")
-    emotions_dir = os.path.join(results_dir, "emotions_and_pose")
-    
-    # Get audio feature files
-    audio_feature_files = glob.glob(os.path.join(speech_dir, "*_audio_features.csv"))
-    logger.info(f"Found {len(audio_feature_files)} audio feature files")
-    
-    # Get video feature files (the aggregate ones, not full JSON files)
-    video_feature_paths = [
-        # Standard path in video_features directory
-        os.path.join(emotions_dir, "video_features"),
-        # Direct in emotions directory
-        emotions_dir
-    ]
-    
-    video_feature_files = []
-    for path in video_feature_paths:
-        if os.path.exists(path):
-            files = glob.glob(os.path.join(path, "*_aggregate.csv"))
-            if files:
-                video_feature_files.extend(files)
-                logger.info(f"Found {len(files)} video feature files in {path}")
-    
-    # Get transcript files that have diarization
-    transcript_files = glob.glob(os.path.join(transcript_dir, "*_diarized.csv"))
-    if not transcript_files:
-        # Try with non-diarized transcripts as fallback
-        transcript_files = glob.glob(os.path.join(transcript_dir, "*.csv"))
-    
-    logger.info(f"Found {len(transcript_files)} transcript files")
-    
-    if not audio_feature_files and not video_feature_files:
-        logger.error("No feature files found. Cannot create pipeline output.")
-        return False
-    
-    # Create a dictionary to hold dataframes by base filename
-    all_features = {}
-    
-    # Process audio feature files
-    for file_path in audio_feature_files:
-        try:
-            # Extract the base name from the file path
-            base_name = os.path.basename(file_path)
-            video_name = base_name.replace("_audio_features.csv", "")
-            
-            # Read the CSV file
-            df = pd.read_csv(file_path)
-            
-            # Add video_name column if not present
-            if "video_name" not in df.columns:
-                df["video_name"] = video_name
-            
-            # Store in dictionary
-            all_features[video_name] = {"audio_features": df}
-        except Exception as e:
-            logger.error(f"Error processing audio feature file {file_path}: {e}")
-    
-    # Process video feature files
-    for file_path in video_feature_files:
-        try:
-            # Extract base name - handles either format
-            base_name = os.path.basename(file_path)
-            if "_video_features_aggregate.csv" in base_name:
-                video_name = base_name.replace("_video_features_aggregate.csv", "")
-            else:
-                # Handle other naming patterns
-                video_name = base_name.split("_aggregate")[0]
-                video_name = video_name.replace("_emotions_and_pose_video_features", "")
-                video_name = video_name.replace("_video_features", "")
-            
-            # Read the CSV file
-            df = pd.read_csv(file_path)
-            
-            # Add video_name column if not present
-            if "video_name" not in df.columns:
-                df["video_name"] = video_name
-            
-            # Store in dictionary
-            if video_name in all_features:
-                all_features[video_name]["video_features"] = df
-            else:
-                all_features[video_name] = {"video_features": df}
-        except Exception as e:
-            logger.error(f"Error processing video feature file {file_path}: {e}")
-    
-    # Process transcript files (if we want to include transcripts in the output)
-    for file_path in transcript_files:
-        try:
-            base_name = os.path.basename(file_path)
-            video_name = base_name.replace("_diarized.csv", "").replace(".csv", "")
-            
-            # Read the CSV file
-            df = pd.read_csv(file_path)
-            
-            # Add video_name column if not present
-            if "video_name" not in df.columns:
-                df["video_name"] = video_name
-            
-            # Store in dictionary
-            if video_name in all_features:
-                all_features[video_name]["transcript"] = df
-            else:
-                all_features[video_name] = {"transcript": df}
-        except Exception as e:
-            logger.error(f"Error processing transcript file {file_path}: {e}")
-    
-    # Create combined dataframes
-    combined_dfs = []
-    for video_name, feature_dict in all_features.items():
-        try:
-            # Start with a minimal dataframe containing just the video name
-            combined_df = pd.DataFrame({"video_name": [video_name]})
-            
-            # Merge audio features if available
-            if "audio_features" in feature_dict:
-                audio_df = feature_dict["audio_features"]
-                # Drop duplicate video_name to avoid conflicts
-                if "video_name" in audio_df.columns:
-                    audio_df = audio_df.drop(columns=["video_name"])
-                
-                # If audio_df has multiple rows, take the first row or aggregate
-                if len(audio_df) > 1:
-                    audio_df = audio_df.iloc[0:1].reset_index(drop=True)
-                
-                # Use a prefix for audio features
-                audio_df = audio_df.add_prefix('audio_')
-                
-                # Join with combined dataframe
-                combined_df = pd.concat([combined_df, audio_df], axis=1)
-            
-            # Merge video features if available
-            if "video_features" in feature_dict:
-                video_df = feature_dict["video_features"]
-                # Drop duplicate video_name to avoid conflicts
-                if "video_name" in video_df.columns and video_df.shape[0] == 1:
-                    video_df = video_df.drop(columns=["video_name"])
-                
-                # If video_df has multiple rows, take the first row
-                if len(video_df) > 1:
-                    video_df = video_df.iloc[0:1].reset_index(drop=True)
-                
-                # Use a prefix for video features (except for MELD features which are already prefixed)
-                prefixed_cols = {}
-                for col in video_df.columns:
-                    if not col.startswith("MELD_") and col != "video_name":
-                        prefixed_cols[col] = f"video_{col}"
-                
-                if prefixed_cols:
-                    video_df = video_df.rename(columns=prefixed_cols)
-                
-                # Join with combined dataframe
-                combined_df = pd.concat([combined_df, video_df], axis=1)
-            
-            # Add summary data from transcript if available
-            if "transcript" in feature_dict:
-                transcript_df = feature_dict["transcript"]
-                
-                # Extract summary metrics (word count, speaker count, etc.)
-                word_count = len(" ".join(transcript_df["text"].astype(str)).split())
-                speaker_count = transcript_df["speaker"].nunique() if "speaker" in transcript_df.columns else 1
-                duration = transcript_df["end"].max() if "end" in transcript_df.columns else 0
-                
-                # Create summary dataframe
-                summary_df = pd.DataFrame({
-                    "transcript_word_count": [word_count],
-                    "transcript_speaker_count": [speaker_count],
-                    "transcript_duration_seconds": [duration]
-                })
-                
-                # Join with combined dataframe
-                combined_df = pd.concat([combined_df, summary_df], axis=1)
-            
-            # Add to list of combined dataframes
-            combined_dfs.append(combined_df)
-        except Exception as e:
-            logger.error(f"Error combining features for {video_name}: {e}")
-    
-    if not combined_dfs:
-        logger.error("No features were successfully combined.")
-        return False
-    
-    # Concatenate all combined dataframes
-    final_df = pd.concat(combined_dfs, ignore_index=True)
-    
-    # Save to CSV
-    output_path = os.path.join(results_dir, output_file)
-    final_df.to_csv(output_path, index=False)
-    logger.info(f"Pipeline output saved to {output_path}")
-    
-    # Also create a simple summary text file
-    create_summary_report(final_df, results_dir)
-    
-    return True
-
-def create_summary_report(df: pd.DataFrame, results_dir: str) -> None:
-    """
-    Create a simple text summary of the pipeline results.
-    
-    Args:
-        df (DataFrame): Combined features dataframe
-        results_dir (str): Directory to save the summary
+        Path to the created summary file
     """
     try:
-        summary_path = os.path.join(results_dir, "pipeline_summary.txt")
+        # Create summary file
+        with open(summary_file, "w") as f:
+            f.write(f"Pipeline Output Summary\n")
+            f.write(f"======================\n\n")
+            f.write(f"Total videos processed: {len(videos)}\n")
+            f.write(f"Total feature files merged: {len(all_csv_files)}\n")
+            
+            if output_data is not None:
+                f.write(f"Total features extracted: {len(output_data.columns)}\n\n")
+            else:
+                f.write(f"No features were extracted successfully\n\n")
+                
+            f.write(f"Videos included:\n")
+            for video_name in videos.keys():
+                f.write(f"- {video_name}\n")
+                
+            if output_data is not None and len(output_data.columns) > 0:
+                f.write(f"\nFeature categories:\n")
+                # Identify feature categories by prefix
+                prefixes = {}
+                for col in output_data.columns:
+                    parts = col.split('_')
+                    if len(parts) > 1:
+                        prefix = parts[0]
+                        if prefix not in prefixes:
+                            prefixes[prefix] = 0
+                        prefixes[prefix] += 1
+                
+                for prefix, count in prefixes.items():
+                    if prefix != "video" and count > 1:  # Skip video_name
+                        f.write(f"- {prefix}_*: {count} features\n")
         
-        with open(summary_path, 'w') as f:
-            f.write("=== Video Data Processing Pipeline Summary ===\n\n")
-            f.write(f"Total videos processed: {len(df)}\n\n")
-            
-            # Write video names
-            f.write("Processed videos:\n")
-            for idx, video_name in enumerate(df['video_name'], 1):
-                f.write(f"{idx}. {video_name}\n")
-            
-            f.write("\n=== Feature Statistics ===\n")
-            
-            # Count audio and video features
-            audio_cols = [col for col in df.columns if col.startswith('audio_')]
-            video_cols = [col for col in df.columns if col.startswith('video_') or col.startswith('MELD_')]
-            
-            f.write(f"\nAudio features extracted: {len(audio_cols)}")
-            f.write(f"\nVideo features extracted: {len(video_cols)}")
-            
-            # Add some sample features if available
-            if 'audio_pitch_mean' in df.columns:
-                f.write("\n\nSample audio metrics (averages across videos):")
-                f.write(f"\n- Average pitch: {df['audio_pitch_mean'].mean():.2f}")
-            
-            if 'MELD_unique_words' in df.columns:
-                f.write("\n\nSample MELD metrics (averages across videos):")
-                f.write(f"\n- Average unique words: {df['MELD_unique_words'].mean():.2f}")
-                f.write(f"\n- Average utterance duration: {df['MELD_avg_utterance_duration'].mean():.2f} seconds")
-            
-            f.write("\n\n=== End of Summary ===\n")
-        
-        logger.info(f"Summary report saved to {summary_path}")
+        logger.info(f"Created summary report: {summary_file}")
+        return str(summary_file)
+    
     except Exception as e:
         logger.error(f"Error creating summary report: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return None
 
-def create_merged_features_json(results_dir: str, output_file: str = "merged_features.json") -> bool:
+def create_pipeline_output(results_dir, speech_features_dir=None, video_features_dir=None, multimodal_features_dir=None):
     """
-    Create a comprehensive JSON file containing merged data from all pipeline outputs.
-    This preserves more detailed information than the CSV format.
+    Create a pipeline output CSV that merges all extracted features.
     
     Args:
-        results_dir: Directory containing all the pipeline results
-        output_file: Name of the output JSON file
-    
+        results_dir: Directory containing all pipeline results
+        speech_features_dir: Directory containing speech feature CSVs
+        video_features_dir: Directory containing video feature CSVs
+        multimodal_features_dir: Directory containing multimodal feature CSVs
+        
     Returns:
-        True if JSON was created successfully, False otherwise
+        Path to the created CSV file
     """
-    # This method would be similar to create_pipeline_output but preserves more
-    # complex data structures by using JSON instead of flattening to CSV
-    # Implementation would be added as needed
-    return False
+    try:
+        results_dir = Path(results_dir)
+        output_csv = results_dir / "pipeline_output.csv"
+        summary_file = results_dir / "pipeline_summary.txt"
+        history_csv = Path(results_dir.parent) / "pipeline_history.csv"
+        
+        # Get current timestamp for this run
+        current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        run_id = int(current_time)  # Convert to integer for incrementing
+        
+        # Read history file if it exists to determine run counter
+        run_counter = 1  # Default first run
+        if history_csv.exists():
+            try:
+                history_df = pd.read_csv(history_csv)
+                if not history_df.empty:
+                    run_counter = len(history_df) + 1
+            except Exception as e:
+                logger.warning(f"Failed to read history file: {e}")
+        
+        # List of feature directories to look for CSV files
+        feature_dirs = []
+        
+        # Add provided feature directories if specified
+        if speech_features_dir and os.path.exists(speech_features_dir):
+            feature_dirs.append(Path(speech_features_dir))
+        else:
+            # Try to find speech features directory in results directory
+            potential_speech_dir = results_dir / "audio_features"
+            if potential_speech_dir.exists():
+                feature_dirs.append(potential_speech_dir)
+        
+        if video_features_dir and os.path.exists(video_features_dir):
+            feature_dirs.append(Path(video_features_dir))
+        else:
+            # Try to find video features directory in results directory
+            potential_video_dir = results_dir / "video_features"
+            if potential_video_dir.exists():
+                feature_dirs.append(potential_video_dir)
+                
+        if multimodal_features_dir and os.path.exists(multimodal_features_dir):
+            feature_dirs.append(Path(multimodal_features_dir))
+        else:
+            # Try to find multimodal features directory in results directory
+            potential_multimodal_dir = results_dir / "multimodal_features"
+            if potential_multimodal_dir.exists():
+                feature_dirs.append(potential_multimodal_dir)
+        
+        # Also check standard output locations in case features were saved there
+        transcript_dir = results_dir / "transcripts"
+        if transcript_dir.exists():
+            feature_dirs.append(transcript_dir)
+            
+        emotions_dir = results_dir / "emotions_and_pose"
+        if emotions_dir.exists():
+            feature_dirs.append(emotions_dir)
+            
+        speech_dir = results_dir / "speech"
+        if speech_dir.exists():
+            feature_dirs.append(speech_dir)
+        
+        # Also search directly in results_dir for any CSVs
+        feature_dirs.append(results_dir)
+        
+        # Find all CSV files
+        all_csv_files = []
+        for directory in feature_dirs:
+            csv_files = list(directory.glob("**/*_features.csv"))
+            all_csv_files.extend(csv_files)
+            
+        logger.info(f"Found {len(all_csv_files)} feature CSV files")
+        
+        if not all_csv_files:
+            logger.warning("No feature CSV files found. Nothing to merge.")
+            # Still create an empty summary
+            create_summary_report(None, {}, [], summary_file)
+            return None
+        
+        # Group CSV files by base name (video name)
+        videos = {}
+        for csv_file in all_csv_files:
+            # Get base name without suffix (e.g., MVI_0575 from MVI_0575_speech_features.csv or MVI_0575_video_features.csv)
+            base_name = csv_file.stem.split('_')[0]
+            if base_name not in videos:
+                videos[base_name] = []
+            videos[base_name].append(csv_file)
+        
+        # Merge features separately for each video
+        merged_dfs = []
+        for video_name, csv_files in videos.items():
+            speech_features_df = None
+            video_features_df = None
+            
+            # Read and process each CSV file
+            for csv_file in csv_files:
+                try:
+                    csv_str = str(csv_file)
+                    df = pd.read_csv(csv_file)
+                    
+                    # Ensure there's a video_name column
+                    if "video_name" not in df.columns and "file_name" not in df.columns:
+                        df["video_name"] = video_name
+                    elif "file_name" in df.columns and "video_name" not in df.columns:
+                        # If there's a file_name but no video_name, create video_name from file_name
+                        df["video_name"] = df["file_name"].apply(lambda x: x.split('_')[0] if isinstance(x, str) else video_name)
+                    
+                    # Categorize features based on file path
+                    if "speech_features" in csv_str:
+                        speech_features_df = df
+                    else:
+                        video_features_df = df
+                        
+                except Exception as e:
+                    logger.error(f"Error reading {csv_file}: {e}")
+            
+            # Merge video and speech features side by side
+            if speech_features_df is not None and video_features_df is not None:
+                # Ensure they have compatible shapes
+                merged_video_df = pd.concat([video_features_df, speech_features_df], axis=1)
+                
+                # Remove duplicate columns (like video_name)
+                merged_video_df = merged_video_df.loc[:, ~merged_video_df.columns.duplicated()]
+            elif speech_features_df is not None:
+                merged_video_df = speech_features_df
+            elif video_features_df is not None:
+                merged_video_df = video_features_df
+            else:
+                logger.warning(f"No valid features found for {video_name}")
+                continue
+            
+            # Add timestamp and run counter
+            merged_video_df["timestamp"] = current_time
+            merged_video_df["run_id"] = run_counter
+            
+            merged_dfs.append(merged_video_df)
+        
+        # Concatenate all video dataframes
+        if merged_dfs:
+            final_df = pd.concat(merged_dfs, ignore_index=True)
+            
+            # Ensure video_name is the first column
+            cols = list(final_df.columns)
+            if "video_name" in cols:
+                cols.remove("video_name")
+                cols = ["video_name"] + cols
+                final_df = final_df[cols]
+            
+            # Save to CSV with timestamp info
+            final_df.to_csv(output_csv, index=False)
+            
+            # Add to history file
+            history_entry = pd.DataFrame({
+                "timestamp": [current_time],
+                "run_id": [run_counter],
+                "results_dir": [str(results_dir)],
+                "video_count": [len(videos)],
+                "feature_count": [len(final_df.columns)]
+            })
+            
+            # Append or create history file
+            try:
+                if history_csv.exists():
+                    history_df = pd.read_csv(history_csv)
+                    history_df = pd.concat([history_df, history_entry], ignore_index=True)
+                    history_df.to_csv(history_csv, index=False)
+                else:
+                    history_entry.to_csv(history_csv, index=False)
+                logger.info(f"Updated pipeline history in {history_csv}")
+            except Exception as e:
+                logger.error(f"Failed to update history file: {e}")
+            
+            logger.info(f"Created pipeline output CSV with {len(final_df)} rows and {len(final_df.columns)} columns")
+            
+            # Create combined features CSV in output directory
+            combined_output_csv = Path(results_dir).parent / "combined_features.csv"
+            
+            try:
+                # Combine with previous runs if file exists
+                if combined_output_csv.exists():
+                    prev_df = pd.read_csv(combined_output_csv)
+                    combined_df = pd.concat([prev_df, final_df], ignore_index=True)
+                    combined_df.to_csv(combined_output_csv, index=False)
+                else:
+                    final_df.to_csv(combined_output_csv, index=False)
+                    
+                logger.info(f"Updated combined features file: {combined_output_csv}")
+            except Exception as e:
+                logger.error(f"Error updating combined features file: {e}")
+            
+            # Create summary file
+            create_summary_report(final_df, videos, all_csv_files, summary_file)
+                
+            return str(output_csv)
+        else:
+            logger.warning("No dataframes to merge")
+            # Still create an empty summary
+            create_summary_report(None, videos, all_csv_files, summary_file)
+            return None
+            
+    except Exception as e:
+        logger.error(f"Error creating pipeline output: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return None
+        
+if __name__ == "__main__":
+    import argparse
+    import sys
+    
+    # Set up logging
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    
+    parser = argparse.ArgumentParser(description="Merge feature CSV files into a single pipeline output.")
+    parser.add_argument("results_dir", help="Directory containing pipeline results")
+    parser.add_argument("--speech-features", help="Directory containing speech feature CSVs")
+    parser.add_argument("--video-features", help="Directory containing video feature CSVs")
+    
+    args = parser.parse_args()
+    
+    result = create_pipeline_output(args.results_dir, args.speech_features, args.video_features)
+    
+    if result:
+        print(f"Successfully created pipeline output: {result}")
+        sys.exit(0)
+    else:
+        print("Failed to create pipeline output")
+        sys.exit(1)
