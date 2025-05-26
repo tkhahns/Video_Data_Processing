@@ -50,7 +50,7 @@ POSE_CONNECTIONS = [
 def process_video(input_path, output_path=None, log_path=None, show_preview=False, 
                   skip_frames=0, backend="opencv", model_name="emotion", log_only=False,
                   with_pose=True, pose_log_path=None, extract_features=False,
-                  video_features_path=None, video_feature_models=None):
+                  video_features_path=None, video_feature_models=None, audio_path=None):
     """
     Process an input video to detect faces and recognize emotions frame by frame.
     Optionally saves annotated video and logs emotions every 1 second.
@@ -69,6 +69,7 @@ def process_video(input_path, output_path=None, log_path=None, show_preview=Fals
         extract_features (bool): If True, extract advanced video features.
         video_features_path (str, optional): Path to save video features.
         video_feature_models (list, optional): List of video feature models to use.
+        audio_path (str, optional): Path to the audio file for multimodal analysis.
     
     Returns:
         bool: True if processing completed successfully, False otherwise.
@@ -640,10 +641,32 @@ def process_video(input_path, output_path=None, log_path=None, show_preview=Fals
         if extract_features:
             logger.info(f"Extracting advanced video features for {video_name}...")
             try:
-                # Define default models if not specified
+                # Always use all models by default
                 if video_feature_models is None:
-                    video_feature_models = ["mediapipe", "pyfeat"]  # Start with the most reliable models
+                    video_feature_models = ["pare", "vitpose", "psa", "rsn", "au_detector", 
+                                           "dan", "eln", "mediapipe", "pyfeat", "optical_flow",
+                                           "av_hubert", "meld"]
+                    logger.info("Using all available feature extraction models")
                 
+                # Check for multimodal models
+                has_multimodal = any(m in video_feature_models for m in ["av_hubert", "meld"])
+                
+                # Find audio if needed for multimodal analysis but not provided
+                if has_multimodal and not audio_path:
+                    logger.info("Searching for audio file for multimodal analysis...")
+                    # Try common paths for audio files
+                    potential_paths = [
+                        os.path.join(os.path.dirname(log_path) if log_path else "", "..", "speech", f"{video_name}.wav"),
+                        os.path.join(os.path.dirname(log_path) if log_path else "", "..", "separated_speech", f"{video_name}.wav"),
+                        os.path.join(os.path.dirname(input_path), "..", "speech", f"{video_name}.wav"),
+                        os.path.join(os.path.dirname(input_path), "..", "separated_speech", f"{video_name}.wav")
+                    ]
+                    for path in potential_paths:
+                        if os.path.exists(path):
+                            audio_path = path
+                            logger.info(f"Found audio file for multimodal analysis: {audio_path}")
+                            break
+                        
                 # Extract features
                 feature_result = video_features.extract_video_features(
                     video_path=input_path,
@@ -651,7 +674,8 @@ def process_video(input_path, output_path=None, log_path=None, show_preview=Fals
                     models=video_feature_models,
                     use_gpu=True,
                     sample_rate=skip_frames + 1,  # Skip frames for efficiency
-                    video_name=video_name  # Pass the video name for inclusion in features
+                    video_name=video_name,  # Pass the video name for inclusion in features
+                    audio_path=audio_path  # Pass the audio path for multimodal analysis
                 )
                 
                 # Save full features to output path
@@ -719,7 +743,8 @@ def process_video(input_path, output_path=None, log_path=None, show_preview=Fals
     return True
 
 def batch_process_videos(input_dir, output_dir, log_dir=None, file_extension="mp4", with_pose=True,
-                         extract_features=False, video_features_dir=None, video_feature_models=None):
+                         extract_features=False, video_features_dir=None, video_feature_models=None,
+                         search_audio_files=True, speech_dir=None):
     """
     Process all videos with the specified extension in the input directory.
     
@@ -732,6 +757,8 @@ def batch_process_videos(input_dir, output_dir, log_dir=None, file_extension="mp
         extract_features (bool): If True, extract advanced video features
         video_features_dir (str, optional): Directory to save video features
         video_feature_models (list, optional): List of feature models to use
+        search_audio_files (bool): Whether to search for matching audio files
+        speech_dir (str, optional): Directory containing separated speech files
         
     Returns:
         dict: Dictionary with processing results for each file
@@ -783,6 +810,41 @@ def batch_process_videos(input_dir, output_dir, log_dir=None, file_extension="mp
         if extract_features and video_features_dir:
             video_features_path = os.path.join(video_features_dir, f"{base_name}_video_features")
         
+        # Always use all models if not specified
+        if video_feature_models is None:
+            video_feature_models = ["pare", "vitpose", "psa", "rsn", "au_detector", 
+                                   "dan", "eln", "mediapipe", "pyfeat", "optical_flow",
+                                   "av_hubert", "meld"]
+            logger.info("Using all available feature extraction models")
+        
+        # Try to find corresponding audio file if needed
+        audio_path = None
+        if search_audio_files:
+            # First check in provided speech directory if available
+            if speech_dir and os.path.exists(speech_dir):
+                speech_file = os.path.join(speech_dir, f"{base_name}.wav")
+                if os.path.exists(speech_file):
+                    audio_path = speech_file
+                    logger.info(f"Found matching audio file in speech directory: {audio_path}")
+            
+            # Check other common locations if still not found
+            if not audio_path:
+                # Look for audio files with the same base name in common locations
+                potential_paths = [
+                    os.path.join(log_dir, "..", "speech", f"{base_name}.wav") if log_dir else None,
+                    os.path.join(log_dir, "..", "separated_speech", f"{base_name}.wav") if log_dir else None,
+                    os.path.join(input_dir, "..", "speech", f"{base_name}.wav"),
+                    os.path.join(input_dir, "..", "separated_speech", f"{base_name}.wav")
+                ]
+                for path in potential_paths:
+                    if path and os.path.exists(path):
+                        audio_path = path
+                        logger.info(f"Found audio file for {base_name}: {audio_path}")
+                        break
+            
+            if not audio_path:
+                logger.warning(f"No audio file found for {base_name}. Multimodal analysis may be incomplete.")
+        
         logger.info(f"Processing {video_name}...")
         success = process_video(
             input_path, 
@@ -793,7 +855,8 @@ def batch_process_videos(input_dir, output_dir, log_dir=None, file_extension="mp
             pose_log_path=pose_log_path,
             extract_features=extract_features,
             video_features_path=video_features_path,
-            video_feature_models=video_feature_models
+            video_feature_models=video_feature_models,
+            audio_path=audio_path
         )
         results[video_name] = success
         

@@ -66,6 +66,8 @@ if [ "$1" == "--help" ] || [ "$1" == "-h" ]; then
     echo "Options:"
     echo "  --input-dir DIR      Directory containing input video files"
     echo "  --video FILE         Single video file to process"
+    echo "  --audio-path FILE    Path to audio file for multimodal analysis"
+    echo "  --speech-dir DIR     Directory containing separated speech audio files"
     echo "  --output-dir DIR     Directory to save emotion analysis results (default: ./output/emotions)"
     echo "  --batch              Process all videos in input directory without prompting"
     echo "  --interactive        Force interactive video selection mode"
@@ -73,8 +75,13 @@ if [ "$1" == "--help" ] || [ "$1" == "-h" ]; then
     echo "  --debug              Enable debug logging"
     echo "  --help               Show this help message"
     echo ""
+    echo "Models:"
+    echo "  --feature-models     Specify which feature extraction models to use (space-separated):"
+    echo "                       mediapipe pyfeat optical_flow av_hubert meld pare vitpose psa rsn au_detector dan eln all"
+    echo ""
     echo "Note: Feature extraction is always enabled by default."
-    echo "By default, the script processes videos with pose estimation and multi-speaker tracking."
+    echo "By default, the script processes videos with pose estimation, multi-speaker tracking,"
+    echo "and uses all available feature models including multimodal ones."
     echo "If run without arguments, the script will show an interactive video selection menu."
     exit 0
 fi
@@ -82,9 +89,12 @@ fi
 # Look for input parameters in arguments
 input_dir=""
 single_video=""
+audio_path=""
+speech_dir=""
 output_dir=""
 batch_mode=false
 extract_features=true  # Always extract features by default
+feature_models="all"   # Default to all feature models
 other_args=()
 i=1
 while [ $i -le $# ]; do
@@ -95,6 +105,12 @@ while [ $i -le $# ]; do
     elif [ "$arg" == "--video" ] && [ $i -lt $# ]; then
         i=$((i+1))
         single_video="${!i}"
+    elif [ "$arg" == "--audio-path" ] && [ $i -lt $# ]; then
+        i=$((i+1))
+        audio_path="${!i}"
+    elif [ "$arg" == "--speech-dir" ] && [ $i -lt $# ]; then
+        i=$((i+1))
+        speech_dir="${!i}"
     elif [ "$arg" == "--output-dir" ] && [ $i -lt $# ]; then
         i=$((i+1))
         output_dir="${!i}"
@@ -102,6 +118,13 @@ while [ $i -le $# ]; do
         batch_mode=true
     elif [ "$arg" == "--extract-features" ]; then
         extract_features=true  # Redundant now but kept for backward compatibility
+    elif [ "$arg" == "--feature-models" ]; then
+        # Collect all feature models until next flag
+        feature_models=""
+        while [ $((i+1)) -le $# ] && ! [[ "${!((i+1))}" == --* ]]; do
+            i=$((i+1))
+            feature_models="$feature_models ${!i}"
+        done
     else
         other_args+=("$arg")
     fi
@@ -127,6 +150,18 @@ if [ -n "$single_video" ]; then
     cmd_args+=("--video" "$single_video")
 fi
 
+# Add audio path if specified directly
+if [ -n "$audio_path" ]; then
+    echo "Using audio path: $audio_path"
+    cmd_args+=("--audio-path" "$audio_path")
+fi
+
+# Add speech directory for the CLI to find matching audio files
+if [ -n "$speech_dir" ]; then
+    echo "Using speech directory: $speech_dir"
+    cmd_args+=("--speech-dir" "$speech_dir")
+fi
+
 # Add output directory if specified
 if [ -n "$output_dir" ]; then
     cmd_args+=("--output-dir" "$output_dir")
@@ -134,6 +169,15 @@ fi
 
 # Always add extract-features flag
 cmd_args+=("--extract-features")
+
+# Add feature models if specified - use all models by default
+if [ -n "$feature_models" ]; then
+    echo "Using feature models: $feature_models"
+    cmd_args+=("--feature-models" $feature_models)
+else
+    echo "Using all available feature models"
+    cmd_args+=("--feature-models" "all")
+fi
 
 # Always add pose estimation by default (unless --no-pose is explicitly included)
 NO_POSE_PRESENT=false

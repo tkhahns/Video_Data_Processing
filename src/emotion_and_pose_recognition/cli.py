@@ -79,6 +79,10 @@ def main():
     parser.add_argument("--batch", "-b", action="store_true", help="Process all videos without prompting")
     parser.add_argument("--log-dir", "-l", help="Directory to save log files")
     
+    # Audio sources for multimodal analysis
+    parser.add_argument("--audio-path", help="Path to audio file for multimodal analysis")
+    parser.add_argument("--speech-dir", help="Directory containing separated speech audio files")
+    
     # Processing options
     parser.add_argument("--with-pose", action="store_true", help="Enable pose estimation")
     parser.add_argument("--no-pose", action="store_true", help="Disable pose estimation")
@@ -90,10 +94,10 @@ def main():
     # Feature extraction
     parser.add_argument("--extract-features", "-e", action="store_true", help="Extract advanced video features")
     parser.add_argument("--feature-models", nargs="+", 
-                        choices=["pare", "vitpose", "psa", "rsn", "au_detector", "dan", "eln", 
-                                "mediapipe", "pyfeat", "optical_flow", "all"],
-                        default=["mediapipe", "pyfeat"],
-                        help="Models to use for feature extraction")
+                       choices=["pare", "vitpose", "psa", "rsn", "au_detector", "dan", "eln", 
+                                "mediapipe", "pyfeat", "optical_flow", "av_hubert", "meld", "all"],
+                       default=["all"],  # Default to all models
+                       help="Models to use for feature extraction")
     
     # Debug options
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
@@ -109,9 +113,10 @@ def main():
     
     # Normalize feature models
     feature_models = args.feature_models
-    if "all" in feature_models:
+    if "all" in feature_models or len(feature_models) == 0:
         feature_models = ["pare", "vitpose", "psa", "rsn", "au_detector", 
-                         "dan", "eln", "mediapipe", "pyfeat", "optical_flow"]
+                         "dan", "eln", "mediapipe", "pyfeat", "optical_flow",
+                         "av_hubert", "meld"]
     
     # Set default output directory if not provided
     if not args.output_dir:
@@ -144,6 +149,32 @@ def main():
         # Set up video features path
         video_features_path = os.path.join(video_features_dir, f"{base_name}_video_features")
         
+        # Try to find corresponding audio file if multimodal models are requested
+        audio_path = args.audio_path
+        
+        if not audio_path and args.speech_dir:
+            # Try to find audio file in specified speech directory
+            speech_file = os.path.join(args.speech_dir, f"{base_name}.wav")
+            if os.path.exists(speech_file):
+                audio_path = speech_file
+                logger.info(f"Found matching audio file in speech directory: {audio_path}")
+                
+        if not audio_path and any(m in feature_models for m in ["av_hubert", "meld"]):
+            # Look for audio files with the same base name in common locations
+            potential_paths = [
+                os.path.join(args.log_dir, "..", "speech", f"{base_name}.wav"),
+                os.path.join(args.log_dir, "..", "separated_speech", f"{base_name}.wav"),
+                os.path.join(os.path.dirname(args.video), "..", "speech", f"{base_name}.wav")
+            ]
+            for path in potential_paths:
+                if os.path.exists(path):
+                    audio_path = path
+                    logger.info(f"Found audio file for multimodal analysis: {audio_path}")
+                    break
+                    
+            if not audio_path:
+                logger.warning("No audio file found for multimodal analysis. Some features may be incomplete.")
+        
         logger.info(f"Processing single video: {video_name}...")
         success = process_video(
             input_path, 
@@ -154,7 +185,8 @@ def main():
             pose_log_path=pose_log_path,
             extract_features=args.extract_features,
             video_features_path=video_features_path,
-            video_feature_models=feature_models
+            video_feature_models=feature_models,
+            audio_path=audio_path
         )
         
         if success:
@@ -167,7 +199,9 @@ def main():
         return 0 if success else 1
         
     else:
-        # Directory processing
+        # Directory processing - prepare speech directory information
+        audio_dir = args.speech_dir
+        
         results = batch_process_videos(
             input_dir=args.input_dir,
             output_dir=args.output_dir,
@@ -176,7 +210,9 @@ def main():
             with_pose=args.with_pose and not args.no_pose,
             extract_features=args.extract_features,
             video_features_dir=video_features_dir,
-            video_feature_models=feature_models
+            video_feature_models=feature_models,
+            search_audio_files=True,  # Always search for audio files
+            speech_dir=audio_dir  # Pass speech directory for finding matching audio files
         )
         
         # Report results
