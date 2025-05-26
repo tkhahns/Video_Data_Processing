@@ -13,16 +13,22 @@ PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 # Change to project root
 cd "$PROJECT_ROOT"
 
-# Check for Hugging Face token in environment
+# Check for Hugging Face token in environment - FIXED to handle non-interactive mode
 if [ -z "$HUGGINGFACE_TOKEN" ]; then
-    echo -e "\n=== Hugging Face Authentication ==="
-    echo "This tool requires a Hugging Face token for accessing models."
-    echo "You can get your token from: https://huggingface.co/settings/tokens"
-    echo "Note: Your token will only be used for this session and will not be saved."
-    
-    # Prompt for token
-    read -sp "Enter your Hugging Face token (input will be hidden): " HUGGINGFACE_TOKEN
-    echo ""
+    # Check if script is running interactively
+    if [ -t 0 ]; then
+        echo -e "\n=== Hugging Face Authentication ==="
+        echo "This tool requires a Hugging Face token for accessing models."
+        echo "You can get your token from: https://huggingface.co/settings/tokens"
+        echo "Note: Your token will only be used for this session and will not be saved."
+        
+        # Prompt for token
+        read -sp "Enter your Hugging Face token (input will be hidden): " HUGGINGFACE_TOKEN
+        echo ""
+    else
+        echo "Warning: Running in non-interactive mode without Hugging Face token."
+        echo "Some features may not work correctly."
+    fi
     
     if [ -z "$HUGGINGFACE_TOKEN" ]; then
         echo "No token provided. Some features may not work correctly."

@@ -116,7 +116,7 @@ if command -v poetry &>/dev/null; then
         
         # Prompt for token if CLI login failed
         echo "You can get your token from: https://huggingface.co/settings/tokens"
-        echo "Note: Your token will only be used for this session and will not be saved."
+        echo "Note: Your token will be passed to parallel processes and used only for this session."
         read -sp "Enter your Hugging Face token (input will be hidden): " HUGGINGFACE_TOKEN
         echo ""
         
@@ -357,6 +357,11 @@ if command -v poetry &>/dev/null; then
         # 5. Start multimodal feature extraction in parallel
         echo "Starting multimodal feature extraction in parallel..."
         (
+            # Ensure the token is passed to the subprocess
+            if [ -n "$HUGGINGFACE_TOKEN" ]; then
+                export HUGGINGFACE_TOKEN
+            fi
+            
             # Only process if videos were selected
             if [ ${#EMOTION_VIDEOS[@]} -eq 0 ]; then
                 echo "No videos selected for multimodal feature extraction. Skipping this step."
