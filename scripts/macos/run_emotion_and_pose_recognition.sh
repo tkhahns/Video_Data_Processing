@@ -88,13 +88,11 @@ fi
 
 # Look for input parameters in arguments
 input_dir=""
-single_video=""
-audio_path=""
-speech_dir=""
 output_dir=""
 batch_mode=false
-extract_features=true  # Always extract features by default
-feature_models="all"   # Default to all feature models
+video_files=()
+audio_paths=()
+speech_dir=""
 other_args=()
 i=1
 while [ $i -le $# ]; do
@@ -102,29 +100,20 @@ while [ $i -le $# ]; do
     if [ "$arg" == "--input-dir" ] && [ $i -lt $# ]; then
         i=$((i+1))
         input_dir="${!i}"
-    elif [ "$arg" == "--video" ] && [ $i -lt $# ]; then
-        i=$((i+1))
-        single_video="${!i}"
-    elif [ "$arg" == "--audio-path" ] && [ $i -lt $# ]; then
-        i=$((i+1))
-        audio_path="${!i}"
-    elif [ "$arg" == "--speech-dir" ] && [ $i -lt $# ]; then
-        i=$((i+1))
-        speech_dir="${!i}"
     elif [ "$arg" == "--output-dir" ] && [ $i -lt $# ]; then
         i=$((i+1))
         output_dir="${!i}"
     elif [ "$arg" == "--batch" ]; then
         batch_mode=true
-    elif [ "$arg" == "--extract-features" ]; then
-        extract_features=true  # Redundant now but kept for backward compatibility
-    elif [ "$arg" == "--feature-models" ]; then
-        # Collect all feature models until next flag
-        feature_models=""
-        while [ $((i+1)) -le $# ] && ! [[ "${!((i+1))}" == --* ]]; do
-            i=$((i+1))
-            feature_models="$feature_models ${!i}"
-        done
+    elif [ "$arg" == "--video" ] && [ $i -lt $# ]; then
+        i=$((i+1))
+        video_files+=("${!i}")
+    elif [ "$arg" == "--audio-path" ] && [ $i -lt $# ]; then
+        i=$((i+1))
+        audio_paths+=("${!i}")
+    elif [ "$arg" == "--speech-dir" ] && [ $i -lt $# ]; then
+        i=$((i+1))
+        speech_dir="${!i}"
     else
         other_args+=("$arg")
     fi
@@ -138,23 +127,24 @@ echo "Feature extraction is enabled - Video features will be extracted"
 # Build command based on input parameters
 cmd_args=()
 
-# Add input directory if specified
-if [ -n "$input_dir" ]; then
+# Add input directory if specified and no video files were provided
+if [ -n "$input_dir" ] && [ ${#video_files[@]} -eq 0 ]; then
     echo "Using input directory: $input_dir"
     cmd_args+=("--input-dir" "$input_dir")
 fi
 
-# Add single video if specified
-if [ -n "$single_video" ]; then
-    echo "Processing single video: $single_video"
-    cmd_args+=("--video" "$single_video")
-fi
-
-# Add audio path if specified directly
-if [ -n "$audio_path" ]; then
-    echo "Using audio path: $audio_path"
-    cmd_args+=("--audio-path" "$audio_path")
-fi
+# Add individual video files if provided
+for ((i=0; i<${#video_files[@]}; i++)); do
+    video="${video_files[$i]}"
+    echo "Adding video file: $video"
+    cmd_args+=("--video" "$video")
+    
+    # If we have a matching audio path for this video, add it
+    if [ $i -lt ${#audio_paths[@]} ]; then
+        echo "  with matching audio file: ${audio_paths[$i]}"
+        cmd_args+=("--audio-path" "${audio_paths[$i]}")
+    fi
+done
 
 # Add speech directory for the CLI to find matching audio files
 if [ -n "$speech_dir" ]; then
