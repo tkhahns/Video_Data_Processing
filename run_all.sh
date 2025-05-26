@@ -146,7 +146,14 @@ if command -v poetry &>/dev/null; then
         # Start emotion and pose recognition in parallel (background)
         echo -e "\n[4/6] Running emotion and pose recognition in parallel..."
         (
-            poetry run scripts/macos/run_emotion_and_pose_recognition.sh --input-dir "$DOWNLOADS_DIR" --output-dir "$EMOTIONS_AND_POSE_DIR" $BATCH_FLAG
+            # Always use all feature models and point to speech directory for audio sources
+            poetry run scripts/macos/run_emotion_and_pose_recognition.sh \
+                --input-dir "$DOWNLOADS_DIR" \
+                --output-dir "$EMOTIONS_AND_POSE_DIR" \
+                --feature-models all \
+                --speech-dir "$SPEECH_OUTPUT_DIR" \
+                $BATCH_FLAG
+                
             EMOTION_EXIT=$?
             echo "EMOTION_EXIT=$EMOTION_EXIT" >> "$SEMAPHORE_FILE"
             echo -e "\nEmotion and pose recognition completed with exit code $EMOTION_EXIT"
@@ -189,14 +196,15 @@ if command -v poetry &>/dev/null; then
         echo "- Emotion and Pose Recognition: $([ $EMOTION_EXIT -eq 0 ] && echo "✅ Success" || echo "❌ Failed")"
         
         # Create pipeline_output.csv that merges all results
-        echo -e "\n[+] Creating pipeline output CSV..."
-        poetry run python -c "from src.speech_to_text.speech_features import create_pipeline_output; create_pipeline_output('$RESULTS_DIR')"
+        echo -e "\n[+] Creating pipeline output CSV with combined audio and video features..."
+        poetry run python -c "from src.utils.merge_features import create_pipeline_output; create_pipeline_output('$RESULTS_DIR')"
         CSV_EXIT=$?
         
         if [ $CSV_EXIT -eq 0 ]; then
             echo "✅ Pipeline output CSV created successfully"
-            echo "- CSV output: $RESULTS_DIR/pipeline_output.csv"
-            echo "- Summary: $RESULTS_DIR/pipeline_summary.txt"
+            echo "- CSV output with combined audio and video features: $RESULTS_DIR/pipeline_output.csv"
+            echo "- Summary report: $RESULTS_DIR/pipeline_summary.txt"
+            echo "  This CSV merges all extracted features for easy analysis and visualization."
         else
             echo "❌ Failed to create pipeline output CSV"
         fi
