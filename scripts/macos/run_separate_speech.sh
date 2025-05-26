@@ -47,10 +47,11 @@ if [ "$1" == "--help" ] || [ "$1" == "-h" ]; then
     exit 0
 fi
 
-# Look for input directory in arguments
+# Look for input parameters in arguments
 input_dir=""
 output_dir=""
 batch_mode=false
+video_files=()
 other_args=()
 i=1
 while [ $i -le $# ]; do
@@ -63,6 +64,9 @@ while [ $i -le $# ]; do
         output_dir="${!i}"
     elif [ "$arg" == "--batch" ]; then
         batch_mode=true
+    elif [ "$arg" == "--video" ] && [ $i -lt $# ]; then
+        i=$((i+1))
+        video_files+=("${!i}")
     else
         other_args+=("$arg")
     fi
@@ -75,10 +79,18 @@ echo -e "\n[2/2] Running speech separation..."
 # Build command based on input parameters
 cmd_args=()
 
-# Add input directory if specified
-if [ -n "$input_dir" ]; then
+# Add input directory if specified and no video files were provided
+if [ -n "$input_dir" ] && [ ${#video_files[@]} -eq 0 ]; then
     echo "Using input directory: $input_dir"
     cmd_args+=("--input-dir" "$input_dir")
+fi
+
+# Add individual video files if provided
+if [ ${#video_files[@]} -gt 0 ]; then
+    echo "Processing ${#video_files[@]} individual video files"
+    for video in "${video_files[@]}"; do
+        cmd_args+=("$video")
+    done
 fi
 
 # Add output directory if specified
