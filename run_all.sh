@@ -76,26 +76,69 @@ if command -v poetry &>/dev/null; then
         echo " - $(basename "$video_path")"
     done
 
-    # STEP 1: Get Hugging Face token - moved to top for better UX
+    # STEP 1: Install core dependencies first including huggingface_hub
+    echo -e "\n[1/6] Installing dependencies using Poetry..."
+    
+    # Install all dependencies from pyproject.toml
+    echo "Installing base dependencies..."
+    poetry install --no-interaction || { echo "Failed to install base dependencies"; exit 1; }
+    
+    # Install specific groups
+    echo "Installing common dependencies..."
+    poetry install --with common --no-interaction || echo "Warning: Some common dependencies failed to install"
+    
+    echo "Installing speech recognition dependencies..."
+    poetry install --with speech --no-interaction || echo "Warning: Some speech recognition dependencies failed to install"
+    
+    echo "Installing emotion recognition dependencies..."
+    poetry install --with emotion --no-interaction || echo "Warning: Some emotion recognition dependencies failed to install"
+    
+    # Install huggingface_hub with CLI support
+    echo "Installing Hugging Face CLI..."
+    poetry run pip install --upgrade "huggingface_hub[cli]" || echo "Warning: Failed to install huggingface_hub CLI"
+    
+    echo "Dependencies installation completed."
+    
+    # STEP 2: Attempt Hugging Face login before asking for token
     echo -e "\n=== Hugging Face Authentication ==="
-    echo "This tool requires a Hugging Face token for accessing models."
-    echo "You can get your token from: https://huggingface.co/settings/tokens"
-    echo "Note: Your token will only be used for this session and will not be saved."
-
-    # Prompt for token
-    read -sp "Enter your Hugging Face token (input will be hidden): " HUGGINGFACE_TOKEN
-    echo ""
-
-    # Validate token is provided
-    if [ -z "$HUGGINGFACE_TOKEN" ]; then
-        echo "No token provided. Some features may not work correctly."
+    echo "This tool requires Hugging Face authentication for accessing models."
+    echo "First, we'll attempt login with the Hugging Face CLI."
+    
+    # Try to login with CLI
+    HF_LOGIN_SUCCESS=false
+    echo -e "\nAttempting Hugging Face CLI login..."
+    if poetry run huggingface-cli login; then
+        echo "Hugging Face CLI login successful!"
+        HF_LOGIN_SUCCESS=true
     else
-        echo "Token received for this session"
+        echo "Hugging Face CLI login failed or was canceled."
+        echo "You will need to provide your Hugging Face token directly."
+        
+        # Prompt for token if CLI login failed
+        echo "You can get your token from: https://huggingface.co/settings/tokens"
+        echo "Note: Your token will only be used for this session and will not be saved."
+        read -sp "Enter your Hugging Face token (input will be hidden): " HUGGINGFACE_TOKEN
+        echo ""
+        
+        # Validate token is provided
+        if [ -z "$HUGGINGFACE_TOKEN" ]; then
+            echo "No token provided. Some features may not work correctly."
+        else
+            echo "Token received for this session"
+            export HUGGINGFACE_TOKEN
+        fi
     fi
+    
+    # Make scripts executable
+    echo -e "\n[2/6] Preparing scripts..."
+    chmod +x "$PROJECT_ROOT/scripts/macos/run_separate_speech.sh"
+    chmod +x "$PROJECT_ROOT/scripts/macos/run_speech_to_text.sh"
+    chmod +x "$PROJECT_ROOT/scripts/macos/run_emotion_and_pose_recognition.sh"
+    chmod +x "$PROJECT_ROOT/scripts/macos/extract_audio_features.sh"
+    chmod +x "$PROJECT_ROOT/scripts/macos/extract_video_features.sh"
+    chmod +x "$PROJECT_ROOT/scripts/macos/extract_multimodal_features.sh"
 
-    export HUGGINGFACE_TOKEN
-
-    # STEP 2: Ask user if they want to process all videos or select manually
+    # STEP 3: Ask user if they want to process all videos or select manually
     echo -e "\nHow would you like to process the videos?"
     echo "1. Process all videos automatically"
     echo "2. Select specific videos to process at each step"
@@ -111,7 +154,7 @@ if command -v poetry &>/dev/null; then
     else
         echo "You will be prompted to select videos for each step."
         
-        # STEP 2a: Select videos for speech separation now
+        # STEP 3a: Select videos for speech separation now
         echo -e "\n=== Select videos for speech separation ==="
         # Display list with numbers
         for i in "${!VIDEO_FILES[@]}"; do
@@ -145,7 +188,7 @@ if command -v poetry &>/dev/null; then
             done
         fi
         
-        # STEP 2b: Select videos for emotion recognition now
+        # STEP 3b: Select videos for emotion recognition now
         echo -e "\n=== Select videos for emotion and pose recognition ==="
         # Display list with numbers
         for i in "${!VIDEO_FILES[@]}"; do
@@ -185,35 +228,8 @@ if command -v poetry &>/dev/null; then
     if [ "$PROCESS_ALL" = true ]; then
         BATCH_FLAG="--batch"
     fi
-    
+
     # NOW START ACTUAL PROCESSING - all user input has been collected
-    
-    echo -e "\n[1/6] Installing dependencies using Poetry..."
-    
-    # Install all dependencies from pyproject.toml
-    echo "Installing base dependencies..."
-    poetry install --no-interaction || { echo "Failed to install base dependencies"; exit 1; }
-    
-    # Install specific groups
-    echo "Installing common dependencies..."
-    poetry install --with common --no-interaction || echo "Warning: Some common dependencies failed to install"
-    
-    echo "Installing emotion recognition dependencies..."
-    poetry install --with emotion --no-interaction || echo "Warning: Some emotion recognition dependencies failed to install"
-    
-    echo "Installing speech recognition dependencies..."
-    poetry install --with speech --no-interaction || echo "Warning: Some speech recognition dependencies failed to install"
-    
-    echo "Dependencies installation completed."
-    
-    # Make scripts executable
-    echo -e "\n[2/6] Preparing scripts..."
-    chmod +x "$PROJECT_ROOT/scripts/macos/run_separate_speech.sh"
-    chmod +x "$PROJECT_ROOT/scripts/macos/run_speech_to_text.sh"
-    chmod +x "$PROJECT_ROOT/scripts/macos/run_emotion_and_pose_recognition.sh"
-    chmod +x "$PROJECT_ROOT/scripts/macos/extract_audio_features.sh"
-    chmod +x "$PROJECT_ROOT/scripts/macos/extract_video_features.sh"
-    chmod +x "$PROJECT_ROOT/scripts/macos/extract_multimodal_features.sh"
     
     # Create semaphore files to track completion of parallel processes
     SEMAPHORE_DIR=$(mktemp -d)

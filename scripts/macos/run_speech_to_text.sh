@@ -28,6 +28,19 @@ else
     }
 fi
 
+# Install huggingface_hub CLI support
+echo "Installing Hugging Face CLI dependencies..."
+poetry run pip install --upgrade "huggingface_hub[cli]" > /dev/null || echo "Warning: Could not install huggingface_hub CLI"
+
+# Attempt Hugging Face login if needed
+if ! poetry run python -c "from huggingface_hub import HfFolder; print(HfFolder.get_token() is not None)" | grep -q "True"; then
+    echo "No Hugging Face token found. Attempting login..."
+    if ! poetry run huggingface-cli login; then
+        echo "Hugging Face login failed or was canceled."
+        echo "Speaker diarization might not work correctly."
+    fi
+fi
+
 # Help message if --help flag is provided
 if [ "$1" == "--help" ] || [ "$1" == "-h" ]; then
     echo -e "\nUsage: ./run_speech_to_text.sh [options] <audio_file(s)>"

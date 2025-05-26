@@ -67,18 +67,32 @@ def check_huggingface_login():
                 print("Login aborted. Speaker diarization requires Hugging Face authentication.")
                 return False
             
-            # Run the huggingface-cli login command
-            print("\nRunning 'huggingface-cli login'...")
+            # Run the huggingface-cli login command directly instead of using the module
+            print("\nRunning Hugging Face CLI login...")
             print("A browser window will open to complete the login process.\n")
             
             import subprocess
             import sys
             try:
-                # Running the login command - this will open a browser window
-                result = subprocess.run(
-                    [sys.executable, "-m", "huggingface_hub.cli.cli", "login"],
-                    check=True
-                )
+                # Try different ways to run the login command
+                try:
+                    # First attempt: use direct CLI command if available
+                    result = subprocess.run(
+                        ["huggingface-cli", "login"],
+                        check=True
+                    )
+                except (subprocess.SubprocessError, FileNotFoundError):
+                    # Second attempt: use the Python module
+                    try:
+                        from huggingface_hub import login
+                        print("Using huggingface_hub.login() function...")
+                        login()
+                    except (ImportError, AttributeError):
+                        # Third attempt: install and then use the CLI
+                        print("Installing huggingface_hub CLI...")
+                        subprocess.run([sys.executable, "-m", "pip", "install", "--upgrade", "huggingface_hub[cli]"], check=True)
+                        # Try again with the CLI
+                        subprocess.run(["huggingface-cli", "login"], check=True)
                 
                 # Verify login was successful by checking token again
                 if HfFolder.get_token() is not None:
@@ -86,10 +100,12 @@ def check_huggingface_login():
                     return True
                 else:
                     print("\nLogin process completed but no valid token found.")
+                    print("You may need to provide a token manually.")
                     return False
-            except subprocess.SubprocessError as e:
+            except Exception as e:
                 print(f"\nError running login command: {e}")
                 print("You can manually login with: huggingface-cli login")
+                print("Or visit https://huggingface.co/settings/tokens to get a token")
                 return False
                 
         except ImportError:
@@ -97,11 +113,11 @@ def check_huggingface_login():
             try:
                 import subprocess
                 import sys
-                subprocess.run([sys.executable, "-m", "pip", "install", "huggingface_hub"], check=True)
+                subprocess.run([sys.executable, "-m", "pip", "install", "--upgrade", "huggingface_hub[cli]"], check=True)
                 print("huggingface_hub installed. Please run the script again.")
                 return False
             except subprocess.SubprocessError:
-                logger.error("Failed to install huggingface_hub. Install it manually: pip install huggingface_hub")
+                logger.error("Failed to install huggingface_hub. Install it manually: pip install huggingface_hub[cli]")
                 return False
     except Exception as e:
         logger.error(f"Error checking Hugging Face login: {e}")
@@ -192,6 +208,22 @@ def load_diarization_model(model_path: Optional[Path] = None, device: str = "cpu
         Loaded diarization model or None if loading fails
     """
     try:
+        # Check if pyannote.audio is installed first
+        try:
+            import importlib
+            importlib.import_module('pyannote.audio')
+        except ImportError:
+            logger.error("pyannote.audio is not installed.")
+            logger.info("Installing pyannote.audio now...")
+            import subprocess
+            import sys
+            try:
+                subprocess.run([sys.executable, "-m", "pip", "install", "pyannote.audio==2.1.1"], check=True)
+                logger.info("Successfully installed pyannote.audio. Continuing...")
+            except subprocess.SubprocessError:
+                logger.error("Failed to install pyannote.audio. Install with: pip install pyannote.audio==2.1.1")
+                return None
+        
         from pyannote.audio import Pipeline
         import torch
         from huggingface_hub import HfFolder
@@ -205,13 +237,23 @@ def load_diarization_model(model_path: Optional[Path] = None, device: str = "cpu
         
         # Check if user is logged in with huggingface-cli
         if not check_huggingface_login():
-            return None
-        
-        # Get the token from huggingface folder
-        auth_token = HfFolder.get_token()
-        if not auth_token:
-            logger.error("No Hugging Face token found after login")
-            return None
+            # If login failed, try to get token from environment
+            import os
+            auth_token = os.environ.get("HUGGINGFACE_TOKEN")
+            if not auth_token:
+                logger.error("No Hugging Face token found in environment after failed login")
+                return None
+            logger.info("Using Hugging Face token from environment")
+        else:
+            # Get the token from huggingface folder
+            auth_token = HfFolder.get_token()
+            if not auth_token:
+                # If still no token, try environment
+                import os
+                auth_token = os.environ.get("HUGGINGFACE_TOKEN")
+                if not auth_token:
+                    logger.error("No Hugging Face token found after login")
+                    return None
         
         # First, explicitly download the required models
         if not download_required_models(auth_token):
@@ -246,7 +288,7 @@ def load_diarization_model(model_path: Optional[Path] = None, device: str = "cpu
             return None
                 
     except ImportError:
-        logger.error("Failed to import pyannote.audio. Install with: pip install pyannote-audio==2.1.1")
+        logger.error("Failed to import pyannote.audio. Install with: pip install pyannote.audio==2.1.1")
         return None
     
     except Exception as e:
