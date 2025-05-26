@@ -690,24 +690,11 @@ def process_video(input_path, output_path=None, log_path=None, show_preview=Fals
         # Save pose data log if requested
         if with_pose and pose_log_path and speaker_pose_data_by_second:
             try:
-                with open(pose_log_path, 'w') as f:
-                    # Use a custom serializer to handle numpy types and potential non-serializable objects
-                    def json_serializer(obj):
-                        if isinstance(obj, (np.integer, np.floating, np.bool_)):
-                            return float(obj)
-                        elif isinstance(obj, (np.ndarray,)):
-                            return obj.tolist()
-                        elif obj is None:
-                            return "unknown"
-                        # Handle directional indicators and other special strings
-                        elif isinstance(obj, str) and obj.upper() in ['N', 'NONE', 'R', 'L', 'RIGHT', 'LEFT', 'M', 'MIDDLE']:
-                            return obj.upper()  # Preserve directional information as standardized uppercase strings
-                        try:
-                            return str(obj)
-                        except:
-                            return "non-serializable"
-                    
-                    json.dump(speaker_pose_data_by_second, f, default=json_serializer)
+                from utils.json_utils import save_json, JSON_INDENT
+                
+                # Use save_json function for standardized JSON output
+                save_json(speaker_pose_data_by_second, pose_log_path)
+                
                 logger.info(f"Saved multi-speaker pose data log to {pose_log_path}")
             except Exception as e:
                 logger.error(f"Error saving pose data log: {str(e)}")
