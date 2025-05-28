@@ -208,7 +208,7 @@ def load_diarization_model(model_path: Optional[Path] = None, device: str = "cpu
         Loaded diarization model or None if loading fails
     """
     try:
-        # Check if pyannote.audio is installed first
+        # Check if pyannote.audio is installed
         try:
             import importlib
             importlib.import_module('pyannote.audio')
@@ -235,64 +235,53 @@ def load_diarization_model(model_path: Optional[Path] = None, device: str = "cpu
             
         logger.info(f"Loading diarization model on {device}...")
         
-        # Check if user is logged in with huggingface-cli
-        if not check_huggingface_login():
-            # If login failed, try to get token from environment
-            import os
-            auth_token = os.environ.get("HUGGINGFACE_TOKEN")
-            if not auth_token:
-                logger.error("No Hugging Face token found in environment after failed login")
-                return None
+        # Try multiple approaches to get a valid token
+        auth_token = None
+        
+        # First, check environment variable
+        import os
+        auth_token = os.environ.get("HUGGINGFACE_TOKEN")
+        if auth_token:
             logger.info("Using Hugging Face token from environment")
         else:
-            # Get the token from huggingface folder
+            # Try to get from huggingface folder
             auth_token = HfFolder.get_token()
-            if not auth_token:
-                # If still no token, try environment
-                import os
-                auth_token = os.environ.get("HUGGINGFACE_TOKEN")
-                if not auth_token:
-                    logger.error("No Hugging Face token found after login")
-                    return None
+            if auth_token:
+                logger.info("Using Hugging Face token from HfFolder cache")
         
-        # First, explicitly download the required models
-        if not download_required_models(auth_token):
-            logger.error("Failed to download required models")
-            show_detailed_license_instructions()
-            return None
-            
-        try:
-            # Try to create the pipeline
-            pipeline = None
-            if model_path is None:
-                # According to official documentation, use version 2.1
-                pipeline = Pipeline.from_pretrained(
-                    "pyannote/speaker-diarization@2.1",
-                    use_auth_token=auth_token  # Pass the actual token instead of True
-                )
-            else:
-                # Use a locally saved model
-                pipeline = Pipeline.from_pretrained(model_path)
-            
-            # Move the pipeline to the specified device only if pipeline was created successfully
-            if pipeline is not None:
+        if not auth_token:
+            logger.warning("No valid Hugging Face token found. Diarization may fail.")
+            # Some versions allow unauthenticated access if model is already cached
+            try:
+                # Try to access without token first
+                pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization@2.1")
                 pipeline.to(torch.device(device))
-                logger.info("Diarization model loaded successfully")
+                logger.info("Successfully loaded diarization model without authentication")
                 return pipeline
-            else:
-                logger.error("Pipeline creation failed")
+            except Exception as e:
+                if "401" in str(e) or "unauthorized" in str(e).lower():
+                    logger.error("Authentication required for diarization model")
+                else:
+                    logger.error(f"Error loading diarization model: {e}")
                 return None
-                
-        except Exception as inner_e:
-            logger.error(f"Error creating pipeline: {inner_e}")
+        
+        try:
+            # With token, create the pipeline
+            pipeline = Pipeline.from_pretrained(
+                "pyannote/speaker-diarization@2.1",
+                use_auth_token=auth_token
+            )
+            pipeline.to(torch.device(device))
+            logger.info("Successfully loaded diarization model")
+            return pipeline
+        except Exception as e:
+            logger.error(f"Failed to load diarization model: {e}")
             return None
                 
-    except ImportError:
-        logger.error("Failed to import pyannote.audio. Install with: pip install pyannote.audio==2.1.1")
-        return None
-    
     except Exception as e:
-        logger.error(f"Failed to load diarization model: {e}")
+        logger.error(f"Error in diarization model loading: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return None
 
 def show_detailed_license_instructions():

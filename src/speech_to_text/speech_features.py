@@ -1,749 +1,539 @@
 """
-Speech and audio feature extraction functionality for speech-to-text processing.
+Extract acoustic and speech features from audio files.
 """
-
 import os
 import sys
+import argparse
 import logging
-import subprocess
-import csv
-import json
 from pathlib import Path
 import numpy as np
-from typing import List, Optional, Dict, Any, Tuple
 import pandas as pd
+import warnings
 
-# Configure logging
-logger = logging.getLogger(__name__)
+# Try to use project's logger
+try:
+    from utils import init_logging
+    logger = init_logging.get_logger(__name__)
+except ImportError:
+    # Fall back to standard logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    logger = logging.getLogger(__name__)
 
-def ensure_dir_exists(dir_path: str) -> Path:
+# Define supported audio formats
+SUPPORTED_AUDIO_FORMATS = ['.wav', '.mp3', '.m4a', '.aac', '.flac', '.ogg']
+
+# Suppress specific warnings
+warnings.filterwarnings('ignore', category=UserWarning)
+
+def ensure_dir_exists(directory):
     """
-    Ensure a directory exists, create it if it doesn't.
+    Create directory if it doesn't exist.
     
     Args:
-        dir_path: Directory path
-    
-    Returns:
-        Path object of the directory
+        directory (str or Path): Path to the directory to create
     """
-    path = Path(dir_path)
-    path.mkdir(parents=True, exist_ok=True)
-    return path
+    if directory:
+        import os
+        os.makedirs(directory, exist_ok=True)
+        logger.info(f"Ensuring directory exists: {directory}")
+    return directory
 
-
-def find_audio_files(
-    paths: Optional[List[str]],
-    recursive: bool = False,
-    default_dir: Optional[Path] = None
-) -> List[Path]:
+def find_audio_files(input_paths, recursive=False, default_dir=None):
     """
-    Find audio files from given paths or default directory.
+    Find all audio files in the given paths.
     
     Args:
-        paths: List of file paths or directories to search
-        recursive: Whether to search recursively in directories
-        default_dir: Default directory to search if paths is empty
+        input_paths: List of paths (or single path) to search for audio files
+        recursive: Whether to search subdirectories recursively
+        default_dir: Default directory to search if input_paths is empty
         
     Returns:
-        List of found audio file paths
+        List of audio file paths
     """
-    from src.speech_to_text import SUPPORTED_AUDIO_FORMATS
-    
     audio_files = []
     
-    # If no paths provided and default_dir exists, use it
-    if not paths and default_dir and default_dir.exists():
-        paths = [str(default_dir)]
-        logger.info(f"No input paths provided. Looking for separated speech files in {default_dir}")
+    # If input_paths is empty and default_dir is provided, use default_dir
+    if not input_paths and default_dir:
+        if os.path.exists(default_dir):
+            input_paths = [default_dir]
+        else:
+            logger.warning(f"Default audio directory not found: {default_dir}")
+            return []
     
-    # If still no paths, return empty list
-    if not paths:
-        return []
+    # Handle input_paths as string, list, or Path
+    if isinstance(input_paths, (str, Path)):
+        input_paths = [input_paths]
     
-    for path in paths:
-        path = Path(path)
+    # Process each input path
+    for input_path in input_paths:
+        path = Path(input_path)
         
-        # If path is a file, add it if it's an audio file
-        if path.is_file():
-            if path.suffix.lower() in SUPPORTED_AUDIO_FORMATS:
-                audio_files.append(path)
-                logger.debug(f"Found audio file: {path}")
-        
-        # If path is a directory, search for audio files
-        elif path.is_dir():
-            if recursive:
-                for audio_file in path.glob("**/*"):
-                    if audio_file.is_file() and audio_file.suffix.lower() in SUPPORTED_AUDIO_FORMATS:
-                        audio_files.append(audio_file)
-                        logger.debug(f"Found audio file (recursive): {audio_file}")
-            else:
-                for audio_file in path.glob("*"):
-                    if audio_file.is_file() and audio_file.suffix.lower() in SUPPORTED_AUDIO_FORMATS:
-                        audio_files.append(audio_file)
-                        logger.debug(f"Found audio file: {audio_file}")
+        if path.is_dir():
+            # If it's a directory, find audio files with supported extensions
+            for audio_format in SUPPORTED_AUDIO_FORMATS:
+                pattern = f"**/*{audio_format}" if recursive else f"*{audio_format}"
+                found_files = list(path.glob(pattern))
+                logger.debug(f"Found {len(found_files)} {audio_format} files in {path}")
+                audio_files.extend(found_files)
+        elif path.exists() and path.suffix.lower() in SUPPORTED_AUDIO_FORMATS:
+            # If it's an audio file with supported format, add it directly
+            audio_files.append(path)
     
-    if not audio_files:
-        logger.info("No audio files found in specified locations")
-    else:
-        logger.info(f"Found {len(audio_files)} audio files")
-        
-    return sorted(audio_files)
+    logger.info(f"Total audio files found: {len(audio_files)} (formats: {', '.join(SUPPORTED_AUDIO_FORMATS)})")
+    
+    # Return sorted list of unique audio file paths
+    return sorted(set(audio_files))
 
+def is_separated_speech_file(file_path):
+    """Check if a file appears to be a separated speech file."""
+    # This is a simple heuristic - you might want to improve it
+    file_name = Path(file_path).name.lower()
+    return "separated" in file_name or "speech" in file_name
 
-def check_dependencies() -> bool:
+def get_output_path(audio_file, output_dir):
+    """Generate appropriate output path based on input audio file."""
+    audio_name = Path(audio_file).stem
+    return Path(output_dir) / audio_name
+
+def extract_audio_features(audio_path):
     """
-    Check if all dependencies are installed.
-    
-    Returns:
-        True if all dependencies are installed, False otherwise
-    """
-    try:
-        import torch
-        import transformers
-        import tqdm
-        
-        # Check for WhisperX
-        try:
-            import whisperx
-            logger.info("WhisperX is installed")
-        except ImportError:
-            logger.warning("WhisperX not found. Install with: pip install git+https://github.com/m-bain/whisperX.git")
-            return False
-        
-        return True
-        
-    except ImportError as e:
-        logger.error(f"Missing dependency: {e}")
-        logger.error("Please install required packages: pip install torch transformers tqdm")
-        return False
-
-
-def get_output_path(audio_path: Path, output_dir: Path) -> Path:
-    """
-    Generate an output path for a transcription file.
-    
-    Args:
-        audio_path: Path to the audio file
-        output_dir: Directory to save the transcription
-        
-    Returns:
-        Path object for the output file
-    """
-    # Create output directory if it doesn't exist
-    ensure_dir_exists(output_dir)
-    
-    # Generate output path based on audio filename
-    output_path = output_dir / f"{audio_path.stem}_transcript"
-    
-    return output_path
-
-
-def extract_audio_features(audio_path: str) -> Dict[str, float]:
-    """
-    Extract audio features like volume, pitch, and spectral characteristics from an audio file.
+    Extract basic audio features from an audio file using Librosa and OpenCV-based metrics.
     
     Args:
         audio_path: Path to the audio file
     
     Returns:
-        Dictionary containing extracted audio features
+        Dictionary with audio features
     """
     try:
+        # Import librosa dynamically to avoid issues if not installed
         import librosa
         import librosa.feature
-        import numpy as np
         
-        logger.info(f"Extracting audio features from {audio_path}")
+        # Ensure the file exists
+        if not os.path.exists(audio_path):
+            logger.error(f"Audio file not found: {audio_path}")
+            return {
+                "audio_duration": 0.0,
+                "sample_rate": 0,
+                "num_channels": 0,
+                "error": "File not found",
+            }
+            
+        # Load audio file with librosa
+        logger.info(f"Loading audio file: {audio_path}")
+        try:
+            y, sr = librosa.load(audio_path, sr=None)
+            duration = librosa.get_duration(y=y, sr=sr)
+            num_channels = 1  # Mono by default with librosa
+
+            # Extract simple audio metrics
+            # OpenCV-like audio features
+            rms = librosa.feature.rms(y=y)[0]
+            oc_audvol = np.mean(rms)
+            oc_audvol_diff = np.mean(np.abs(np.diff(rms)))
+            
+            # Pitch estimation using librosa
+            pitches, magnitudes = librosa.piptrack(y=y, sr=sr)
+            pitch = []
+            for i in range(pitches.shape[1]):
+                index = magnitudes[:, i].argmax()
+                pitch.append(pitches[index, i])
+            
+            oc_audpit = np.mean([p for p in pitch if p > 0]) if any(p > 0 for p in pitch) else 0
+            oc_audpit_diff = np.mean(np.abs(np.diff([p for p in pitch if p > 0]))) if any(p > 0 for p in pitch) else 0
+            
+            # Librosa Spectral Features
+            spectral_centroid = librosa.feature.spectral_centroid(y=y, sr=sr)[0]
+            spectral_bandwidth = librosa.feature.spectral_bandwidth(y=y, sr=sr)[0]
+            spectral_flatness = librosa.feature.spectral_flatness(y=y)[0]
+            spectral_rolloff = librosa.feature.spectral_rolloff(y=y, sr=sr)[0]
+            zero_crossing_rate = librosa.feature.zero_crossing_rate(y)[0]
+            
+            # Tempo
+            onset_env = librosa.onset.onset_strength(y=y, sr=sr)
+            tempo = librosa.beat.tempo(onset_envelope=onset_env, sr=sr)[0]
+            
+            # RMSE energy
+            rmse = librosa.feature.rms(y=y)[0]
+            
+            # Spectral contrast
+            spectral_contrast = librosa.feature.spectral_contrast(y=y, sr=sr)
+            
+            # Create feature dictionary
+            features = {
+                "audio_duration": duration,
+                "sample_rate": sr,
+                "num_channels": num_channels,
+                
+                # OpenCV-like audio volume and pitch
+                "oc_audvol": float(oc_audvol),
+                "oc_audvol_diff": float(oc_audvol_diff),
+                "oc_audpit": float(oc_audpit),
+                "oc_audpit_diff": float(oc_audpit_diff),
+                
+                # Librosa spectral features
+                "lbrs_spectral_centroid": np.mean(spectral_centroid),
+                "lbrs_spectral_bandwidth": np.mean(spectral_bandwidth),
+                "lbrs_spectral_flatness": np.mean(spectral_flatness),
+                "lbrs_spectral_rolloff": np.mean(spectral_rolloff),
+                "lbrs_zero_crossing_rate": np.mean(zero_crossing_rate),
+                "lbrs_rmse": np.mean(rmse),
+                "lbrs_tempo": tempo,
+                
+                # Single-value versions
+                "lbrs_spectral_flatness_singlevalue": float(np.mean(spectral_flatness)),
+                "lbrs_spectral_contrast_singlevalue": float(np.mean(spectral_contrast)),
+                "lbrs_rmse_singlevalue": float(np.mean(rmse)),
+                "lbrs_tempo_singlevalue": float(tempo),
+                "lbrs_zero_crossing_rate_singlevalue": float(np.mean(zero_crossing_rate)),
+            }
+            
+            logger.info(f"Extracted basic audio features from {audio_path}")
+            return features
+            
+        except Exception as e:
+            logger.error(f"Error extracting audio features: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {
+                "audio_duration": 0.0,
+                "sample_rate": 0,
+                "num_channels": 0,
+                "error": str(e),
+            }
+    
+    except ImportError as e:
+        logger.error(f"Required library not found: {e}. Installing librosa...")
+        try:
+            import pip
+            pip.main(['install', 'librosa'])
+            logger.info("Librosa installed. Please rerun the feature extraction.")
+        except Exception as pip_error:
+            logger.error(f"Could not install librosa: {pip_error}")
+        
+        return {
+            "audio_duration": 0.0,
+            "sample_rate": 0,
+            "num_channels": 0,
+            "error": f"Required library not installed: {e}",
+        }
+
+def extract_speech_emotion_features(audio_path):
+    """
+    Extract speech emotion features from an audio file.
+    
+    Args:
+        audio_path: Path to the audio file
+    
+    Returns:
+        Dictionary with speech emotion features
+    """
+    try:
+        # Attempt to import librosa which is more likely to be available
+        import librosa
+        import numpy as np
         
         # Load audio file
-        y, sr = librosa.load(audio_path, sr=None)
-        
-        # Audio volume (RMS energy)
-        rms = librosa.feature.rms(y=y)[0]
-        oc_audvol = float(np.mean(rms))
-        oc_audvol_diff = float(np.mean(np.abs(np.diff(rms))))
-        
-        # Audio pitch
-        pitches, magnitudes = librosa.piptrack(y=y, sr=sr)
-        pitches_mean = np.mean(pitches[pitches > 0]) if np.any(pitches > 0) else 0
-        oc_audpit = float(pitches_mean)
-        
-        # Pitch changes
-        if len(magnitudes) > 1:
-            pitch_diffs = np.diff(pitches, axis=1)
-            pitch_diffs_masked = pitch_diffs * (pitches[:, :-1] > 0)
-            oc_audpit_diff = float(np.mean(np.abs(pitch_diffs_masked[pitch_diffs_masked > 0]))) if np.any(pitch_diffs_masked > 0) else 0
-        else:
-            oc_audpit_diff = 0
-        
-        # Librosa spectral features
-        spectral_centroid = librosa.feature.spectral_centroid(y=y, sr=sr)[0]
-        spectral_bandwidth = librosa.feature.spectral_bandwidth(y=y, sr=sr)[0]
-        spectral_rolloff = librosa.feature.spectral_rolloff(y=y, sr=sr)[0]
-        spectral_flatness = librosa.feature.spectral_flatness(y=y)[0]
-        zcr = librosa.feature.zero_crossing_rate(y)[0]
-        
-        # Spectral contrast - add this missing feature
-        spectral_contrast = librosa.feature.spectral_contrast(y=y, sr=sr)
-        spectral_contrast_mean = float(np.mean(spectral_contrast))
-        
-        # Tempo - Fix the tempo extraction with better error handling
         try:
-            onset_env = librosa.onset.onset_strength(y=y, sr=sr)
-            tempo_result = librosa.beat.tempo(onset_envelope=onset_env, sr=sr)
-            # Ensure tempo is a scalar value
-            tempo_value = float(tempo_result[0]) if hasattr(tempo_result, '__len__') else float(tempo_result)
-        except Exception as e:
-            logger.warning(f"Error extracting tempo: {e}. Using default value.")
-            tempo_value = 120.0  # Default value if tempo extraction fails
-        
-        # Compute single values
-        lbrs_features = {
-            'lbrs_spectral_centroid': list(spectral_centroid),
-            'lbrs_spectral_bandwidth': list(spectral_bandwidth),
-            'lbrs_spectral_flatness': list(spectral_flatness),
-            'lbrs_spectral_rolloff': list(spectral_rolloff),
-            'lbrs_zero_crossing_rate': list(zcr),
-            'lbrs_rmse': list(rms),
-            'lbrs_tempo': tempo_value,  # Use the safely extracted tempo value
+            y, sr = librosa.load(audio_path, sr=None)
             
-            # Single value summaries
-            'lbrs_spectral_centroid_singlevalue': float(np.mean(spectral_centroid)),
-            'lbrs_spectral_bandwidth_singlevalue': float(np.mean(spectral_bandwidth)),
-            'lbrs_spectral_flatness_singlevalue': float(np.mean(spectral_flatness)),
-            'lbrs_spectral_rolloff_singlevalue': float(np.mean(spectral_rolloff)),
-            'lbrs_zero_crossing_rate_singlevalue': float(np.mean(zcr)),
-            'lbrs_rmse_singlevalue': float(np.mean(rms)),
-            'lbrs_tempo_singlevalue': tempo_value,  # Use the safely extracted tempo value
-            'lbrs_spectral_contrast_singlevalue': spectral_contrast_mean,
+            # Define emotions we want to detect
+            emotions = ['neutral', 'calm', 'happy', 'sad', 'angry', 'fear', 'disgust', 'ps', 'boredom']
+            ser_features = {}
             
-            # OpenCV-style audio features
-            'oc_audvol': oc_audvol,
-            'oc_audvol_diff': oc_audvol_diff,
-            'oc_audpit': oc_audpit,
-            'oc_audpit_diff': oc_audpit_diff,
-        }
-        
-        return lbrs_features
-        
-    except ImportError:
-        logger.warning("Librosa not installed. Cannot extract audio features.")
-        return {
-            'oc_audvol': 0, 'oc_audvol_diff': 0, 
-            'oc_audpit': 0, 'oc_audpit_diff': 0,
-            'lbrs_spectral_centroid_singlevalue': 0,
-            'lbrs_spectral_bandwidth_singlevalue': 0,
-            'lbrs_spectral_flatness_singlevalue': 0,
-            'lbrs_spectral_rolloff_singlevalue': 0,
-            'lbrs_zero_crossing_rate_singlevalue': 0,
-            'lbrs_rmse_singlevalue': 0,
-            'lbrs_tempo_singlevalue': 120.0,  # Default value
-            'lbrs_spectral_contrast_singlevalue': 0,
-        }
-    except Exception as e:
-        logger.error(f"Error extracting audio features: {e}")
-        import traceback
-        logger.error(traceback.format_exc())  # Add stack trace for better debugging
-        return {
-            'oc_audvol': 0, 'oc_audvol_diff': 0, 
-            'oc_audpit': 0, 'oc_audpit_diff': 0,
-            'lbrs_spectral_centroid_singlevalue': 0,
-            'lbrs_spectral_bandwidth_singlevalue': 0,
-            'lbrs_spectral_flatness_singlevalue': 0,
-            'lbrs_spectral_rolloff_singlevalue': 0,
-            'lbrs_zero_crossing_rate_singlevalue': 0,
-            'lbrs_rmse_singlevalue': 0,
-            'lbrs_tempo_singlevalue': 120.0,  # Default value
-            'lbrs_spectral_contrast_singlevalue': 0,
-        }
-
-def extract_speech_emotion_features(audio_path: str) -> Dict[str, float]:
-    """
-    Extract speech emotion recognition features from an audio file.
-    
-    Args:
-        audio_path: Path to the audio file
-    
-    Returns:
-        Dictionary containing speech emotion probabilities
-    """
-    try:
-        # This is a placeholder. In a real implementation, you would use a
-        # speech emotion recognition model like those in librosa or tensorflow
-        import numpy as np
-        
-        logger.info(f"Extracting speech emotion features from {audio_path}")
-        
-        # These would normally come from a proper SER model
-        # We're just using random values as placeholders
-        emotions = {
-            'ser_neutral': float(np.random.uniform(0.5, 0.8)),  # More likely to be neutral
-            'ser_calm': float(np.random.uniform(0.1, 0.4)),
-            'ser_happy': float(np.random.uniform(0.1, 0.5)),
-            'ser_sad': float(np.random.uniform(0.1, 0.3)),
-            'ser_angry': float(np.random.uniform(0.05, 0.2)),
-            'ser_fear': float(np.random.uniform(0.05, 0.15)),
-            'ser_disgust': float(np.random.uniform(0.05, 0.15)),
-            'ser_ps': float(np.random.uniform(0.05, 0.2)),  # pleasant surprise
-            'ser_boredom': float(np.random.uniform(0.1, 0.3))
-        }
-        
-        # Normalize to make probabilities sum to 1
-        total = sum(emotions.values())
-        if total > 0:
-            for key in emotions:
-                emotions[key] = emotions[key] / total
+            # Extract basic audio features that correlate with emotions
+            # This is a simplified approach - in production you would use a trained model
+            
+            # Loudness correlates with emotions like anger, happiness (higher) vs sad, calm (lower)
+            rms = np.mean(librosa.feature.rms(y=y)[0])
+            
+            # Spectral features
+            spectral_centroid = np.mean(librosa.feature.spectral_centroid(y=y, sr=sr)[0])
+            spectral_bandwidth = np.mean(librosa.feature.spectral_bandwidth(y=y, sr=sr)[0])
+            spectral_rolloff = np.mean(librosa.feature.spectral_rolloff(y=y, sr=sr)[0])
+            zero_crossing_rate = np.mean(librosa.feature.zero_crossing_rate(y)[0])
+            
+            # Extract MFCCs (very useful for emotion detection)
+            mfccs = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13)
+            mfccs_mean = np.mean(mfccs, axis=1)
+            
+            # In a real implementation, these features would be fed to a trained model
+            # Here we'll simulate emotion probabilities based on audio characteristics
+            
+            # Initialize with a slight bias toward neutral
+            probs = np.ones(len(emotions)) * 0.05
+            probs[0] = 0.2  # Neutral has higher base probability
+            
+            # Modify probabilities based on audio features
+            # High energy often correlates with happiness/anger
+            if rms > 0.1:  
+                probs[2] += 0.3  # happy
+                probs[4] += 0.2  # angry
+            else:
+                probs[3] += 0.2  # sad
+                probs[1] += 0.1  # calm
                 
-        return emotions
-    except Exception as e:
-        logger.error(f"Error extracting speech emotion features: {e}")
-        return {
-            'ser_neutral': 0, 'ser_calm': 0, 'ser_happy': 0, 
-            'ser_sad': 0, 'ser_angry': 0, 'ser_fear': 0,
-            'ser_disgust': 0, 'ser_ps': 0, 'ser_boredom': 0
-        }
+            # Normalize to sum to 1
+            probs = probs / np.sum(probs)
+            
+            # Create features dictionary
+            for i, emotion in enumerate(emotions):
+                ser_features[f"ser_{emotion}"] = float(probs[i])
+            
+            logger.info(f"Extracted speech emotion features from {audio_path}")
+            return ser_features
+            
+        except Exception as e:
+            logger.debug(f"Non-critical error in emotion feature extraction: {e}")
+            # Fallback to simple neutral emotion
+            emotions = ['neutral', 'calm', 'happy', 'sad', 'angry', 'fear', 'disgust', 'ps', 'boredom']
+            ser_features = {f"ser_{emotion}": 0.0 for emotion in emotions}
+            ser_features["ser_neutral"] = 1.0  # Default to neutral
+            return ser_features
+    
+    except ImportError:
+        # Gracefully handle missing librosa
+        logger.info("Librosa not available - using default emotion values")
+        emotions = ['neutral', 'calm', 'happy', 'sad', 'angry', 'fear', 'disgust', 'ps', 'boredom']
+        ser_features = {f"ser_{emotion}": 0.0 for emotion in emotions}
+        ser_features["ser_neutral"] = 1.0  # Default to neutral
+        return ser_features
 
-def extract_opensmile_features(audio_path: str) -> Dict[str, float]:
+def extract_opensmile_features(audio_path):
     """
-    Extract OpenSMILE speech features from an audio file.
+    Extract OpenSMILE features from an audio file.
     
     Args:
         audio_path: Path to the audio file
     
     Returns:
-        Dictionary containing OpenSMILE features
+        Dictionary with OpenSMILE features
     """
     try:
-        # This function would normally call OpenSMILE to extract features
-        # Here we generate placeholder values for demonstration
+        # Try to import opensmile
+        import opensmile
         
-        logger.info(f"Extracting OpenSMILE features from {audio_path}")
+        # Define features to extract
+        feature_set = opensmile.FeatureSet.ComParE_2016
+        feature_level = opensmile.FeatureLevel.Functionals
         
-        # Create placeholder for common OpenSMILE features
-        osm_features = {}
+        # Create smile object with specified parameters
+        smile = opensmile.Smile(
+            feature_set=feature_set,
+            feature_level=feature_level,
+            num_workers=2
+        )
         
-        # Energy & Loudness features
-        for feature in ['pcm_RMSenergy_sma', 'loudness_sma']:
-            osm_features[f'osm_{feature}'] = float(np.random.uniform(0, 1))
+        try:
+            # Extract features
+            features = smile.process_file(audio_path)
             
-        # Spectral features
-        for feature in ['spectralFlux_sma', 'spectralRollOff25_sma', 'spectralRollOff75_sma', 
-                       'spectralCentroid_sma', 'spectralEntropy_sma', 'spectralSlope_sma', 
-                       'spectralDecrease_sma']:
-            osm_features[f'osm_{feature}'] = float(np.random.uniform(0, 1))
+            # Convert to dictionary with osm_ prefix
+            osm_features = {}
+            for col in features.columns:
+                # Rename columns to have osm_ prefix
+                osm_col = f"osm_{col}"
+                if isinstance(features[col].iloc[0], (int, float)):
+                    osm_features[osm_col] = float(features[col].iloc[0])
             
-        # MFCC features - add all 12 as requested
-        for i in range(1, 13):
-            osm_features[f'osm_mfcc{i}_sma'] = float(np.random.uniform(-1, 1))
+            logger.info(f"Extracted {len(osm_features)} OpenSMILE features from {audio_path}")
+            return osm_features
             
-        # Voice quality features
-        for feature in ['F0final_sma', 'voicingProb_sma', 'jitterLocal_sma', 'shimmerLocal_sma']:
-            osm_features[f'osm_{feature}'] = float(np.random.uniform(0, 1))
-            
-        # LSP features
-        for i in range(1, 9):
-            osm_features[f'osm_lsf{i}'] = float(np.random.uniform(0, 1))
-            
-        # Zero crossing rate
-        osm_features['osm_zcr_sma'] = float(np.random.uniform(0, 1))
-        
-        # Psychoacoustic features
-        for feature in ['psychoacousticHarmonicity_sma', 'psychoacousticSharpness_sma']:
-            osm_features[f'osm_{feature}'] = float(np.random.uniform(0, 1))
-        
-        # Add functionals for summary statistics
-        for func in ['mean', 'stddev', 'skewness', 'kurtosis', 'min', 'max', 'range']:
-            osm_features[f'osm_{func}'] = float(np.random.uniform(0, 1))
-            
-        # Add percentiles as requested in the JSON
-        for percentile in [1.0, 5.0, 25.0, 50.0, 75.0, 95.0, 99.0]:
-            osm_features[f'osm_percentile{percentile}'] = float(np.random.uniform(0, 1))
-            
-        # Add quartile features
-        for q in [1, 3]:
-            osm_features[f'osm_quartile{q}'] = float(np.random.uniform(0, 1))
-        osm_features['osm_interquartileRange'] = float(np.random.uniform(0, 1))
-        
-        # Linear regression coefficients
-        for i in range(1, 3):
-            osm_features[f'osm_linregc{i}'] = float(np.random.uniform(-1, 1))
-        osm_features['osm_linregerr'] = float(np.random.uniform(0, 0.1))
-        
-        # Add missing functionals
-        osm_features['osm_minPos'] = float(np.random.randint(0, 1000))
-        osm_features['osm_maxPos'] = float(np.random.randint(0, 1000))
-            
-        return osm_features
-        
-    except Exception as e:
-        logger.error(f"Error extracting OpenSMILE features: {e}")
-        return {'osm_error': str(e)}
+        except Exception as e:
+            logger.error(f"Error extracting OpenSMILE features: {e}")
+            return {"osm_error": str(e)}
+    
+    except ImportError:
+        logger.warning("OpenSMILE Python package not found. Install with: pip install opensmile")
+        # Return a basic feature set with zeros as placeholder
+        basic_osm_features = {
+            "osm_pcm_RMSenergy_sma": 0.0,
+            "osm_loudness_sma": 0.0,
+            "osm_spectralFlux_sma": 0.0,
+            "osm_spectralCentroid_sma": 0.0,
+            "osm_mfcc1_sma": 0.0,
+            "osm_F0final_sma": 0.0,
+        }
+        return basic_osm_features
 
-def extract_text_embedding_features(text: str = None) -> Dict[str, float]:
+def extract_whisperx_transcription(audio_path, diarize=True):
     """
-    Extract text embedding features for sentiment analysis and text representation.
-    
-    Args:
-        text: Input text (transcript) to analyze
-    
-    Returns:
-        Dictionary of features from various text embedding models
-    """
-    # This would normally analyze the input text, but for now we'll add placeholders
-    features = {}
-    
-    # Add sentiment analysis features (ARVS)
-    for name in ['batch_size', 'n_out', 'd_out']:
-        features[f'arvs_{name}'] = float(np.random.uniform(0, 1))
-    
-    # Add DeBERTa features
-    for name in ['SQuAD_1.1_F1', 'SQuAD_2.0_F1', 'MNLI_m_Acc', 
-                'SST-2_Acc', 'QNLI_Acc', 'CoLA_MCC', 'RTE_Acc', 
-                'MRPC_Acc', 'QQP_Acc', 'STS-B_P']:
-        features[f'DEB_{name}'] = float(np.random.uniform(0, 1))
-    
-    # Add SimCSE features
-    for name in ['STS12', 'STS13', 'STS14', 'STS15', 'STS16', 
-                'STSBenchmark', 'SICKRelatedness', 'Avg']:
-        features[f'CSE_{name}'] = float(np.random.uniform(0, 1))
-    
-    # Add ALBERT features
-    for name in ['mnli', 'qnli', 'qqp', 'rte', 'sst', 'mrpc', 'cola', 'sts',
-                'squad1.1_dev', 'squad2.0_dev', 'squad2.0_test', 'race_test']:
-        features[f'alb_{name}'] = float(np.random.uniform(0, 1))
-    
-    # Add BERT features (simplified)
-    features['BERT_score'] = float(np.random.uniform(0, 10))
-    
-    # Add USE features (simplified)
-    features['USE_embedding_mean'] = float(np.random.uniform(-1, 1))
-    
-    return features
-
-def extract_audio_stretchy_features(audio_path: str) -> Dict[str, float]:
-    """
-    Extract AudioStretchy features for time-stretching information.
-    
-    Args:
-        audio_path: Path to audio file
-        
-    Returns:
-        Dictionary of AudioStretchy features
-    """
-    import random
-    
-    features = {}
-    
-    # Time stretching parameters
-    features['AS_ratio'] = round(random.uniform(0.5, 2.0), 2)
-    features['AS_gap_ratio'] = round(random.uniform(0.8, 1.2), 2)
-    features['AS_lower_freq'] = float(random.randint(20, 100))
-    features['AS_upper_freq'] = float(random.randint(8000, 20000))
-    features['AS_buffer_ms'] = float(random.randint(10, 100))
-    features['AS_threshold_gap_db'] = float(random.randint(-60, -30))
-    features['AS_double_range'] = random.choice([0.0, 1.0])
-    features['AS_fast_detection'] = random.choice([0.0, 1.0])
-    features['AS_normal_detection'] = random.choice([0.0, 1.0])
-    
-    # File properties
-    features['AS_sample_rate'] = float(random.choice([44100, 48000]))
-    features['AS_input_nframes'] = float(random.randint(1000000, 10000000))
-    features['AS_output_nframes'] = features['AS_input_nframes'] * features['AS_ratio']
-    features['AS_nchannels'] = float(random.choice([1, 2]))
-    features['AS_input_duration_sec'] = features['AS_input_nframes'] / features['AS_sample_rate']
-    features['AS_output_duration_sec'] = features['AS_output_nframes'] / features['AS_sample_rate']
-    features['AS_actual_output_ratio'] = features['AS_output_duration_sec'] / features['AS_input_duration_sec']
-    
-    return features
-
-def extract_all_features(audio_path: str, transcript: str = None) -> Dict[str, Any]:
-    """
-    Extract all available features from an audio file and optional transcript.
+    Extract transcription features from an audio file using WhisperX.
     
     Args:
         audio_path: Path to the audio file
-        transcript: Optional transcript text
-    
+        diarize: Whether to perform speaker diarization
+        
     Returns:
-        Dictionary containing all extracted features
+        Dictionary with transcription features
     """
+    try:
+        import whisperx
+        import torch
+        
+        # Check if CUDA is available
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        
+        # Load model
+        model = whisperx.load_model("base", device)
+        
+        # Transcribe audio
+        result = model.transcribe(audio_path)
+        
+        # Perform diarization if requested
+        if diarize:
+            try:
+                # Load diarization model
+                diarize_model = whisperx.DiarizationPipeline(use_auth_token=True)
+                
+                # Diarize
+                diarization_result = diarize_model(audio_path)
+                
+                # Assign speaker labels
+                result = whisperx.assign_speakers(result["segments"], diarization_result)
+            except Exception as e:
+                logger.error(f"Error during diarization: {e}")
+        
+        # Extract words with speaker labels as features
+        word_features = {}
+        for i, segment in enumerate(result.get("segments", [])):
+            speaker = segment.get("speaker", "unknown")
+            for j, word in enumerate(segment.get("words", [])):
+                word_text = word.get("word", "").strip()
+                if word_text:
+                    feature_name = f"WhX_highlight_diarize__{speaker}_word_{i}_{j}"
+                    word_features[feature_name] = word_text
+        
+        logger.info(f"Extracted WhisperX transcription features from {audio_path}")
+        return word_features
+    
+    except ImportError:
+        logger.warning("WhisperX not installed. Install with: pip install git+https://github.com/m-bain/whisperx.git")
+        return {}
+
+def extract_all_speech_features(audio_path, output_dir=None):
+    """
+    Extract all available speech features and save to CSV if output_dir is provided.
+    
+    Args:
+        audio_path: Path to the audio file
+        output_dir: Optional directory to save features CSV
+        
+    Returns:
+        DataFrame with all features
+    """
+    # Extract all features
+    audio_features = extract_audio_features(audio_path)
+    emotion_features = extract_speech_emotion_features(audio_path)
+    opensmile_features = extract_opensmile_features(audio_path)
+    
+    # Optional: Add transcription features (disabled by default as it's slow)
+    # transcription_features = extract_whisperx_transcription(audio_path, diarize=True)
+    
+    # Combine all features
     all_features = {
-        'file_name': os.path.basename(audio_path)
+        "file_name": os.path.basename(audio_path),
+        **audio_features,
+        **emotion_features,
+        **opensmile_features,
+        # **transcription_features,  # Uncomment if transcription features are extracted
     }
     
-    # Extract audio features
-    try:
-        audio_features = extract_audio_features(audio_path)
-        all_features.update(audio_features)
-    except Exception as e:
-        logger.error(f"Error extracting audio features: {e}")
+    # Create DataFrame
+    df = pd.DataFrame([all_features])
     
-    # Extract speech emotion features
-    try:
-        emotion_features = extract_speech_emotion_features(audio_path)
-        all_features.update(emotion_features)
-    except Exception as e:
-        logger.error(f"Error extracting speech emotion features: {e}")
-    
-    # Extract OpenSMILE features
-    try:
-        opensmile_features = extract_opensmile_features(audio_path)
-        all_features.update(opensmile_features)
-    except Exception as e:
-        logger.error(f"Error extracting OpenSMILE features: {e}")
-    
-    # Extract text embedding features if transcript is provided
-    try:
-        text_features = extract_text_embedding_features(transcript)
-        all_features.update(text_features)
-    except Exception as e:
-        logger.error(f"Error extracting text features: {e}")
-    
-    # Extract AudioStretchy features
-    try:
-        stretch_features = extract_audio_stretchy_features(audio_path)
-        all_features.update(stretch_features)
-    except Exception as e:
-        logger.error(f"Error extracting AudioStretchy features: {e}")
-    
-    return all_features
-
-def ensure_features_csv_exists(audio_path: str, output_dir: str = None) -> str:
-    """
-    Ensure a features CSV exists for the given audio file, create if missing.
-    
-    Args:
-        audio_path: Path to the audio file
-        output_dir: Directory to save the CSV file (default: same directory as audio)
-        
-    Returns:
-        Path to the CSV file
-    """
-    audio_path = Path(audio_path)
-    
-    # Default output directory to audio file directory if not specified
-    if output_dir is None:
-        output_dir = audio_path.parent
-    else:
+    # Save to CSV if output directory is provided
+    if output_dir:
         output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
+        ensure_dir_exists(output_dir)
+        output_file = output_dir / f"{Path(audio_path).stem}_features.csv"
+        df.to_csv(output_file, index=False)
+        logger.info(f"Saved all speech features to {output_file}")
     
-    # Determine output file name
-    output_filename = f"{audio_path.stem}_features.csv"
-    output_path = output_dir / output_filename
-    
-    # Check if file already exists
-    if output_path.exists():
-        logger.info(f"Features CSV already exists: {output_path}")
-        
-        # Load existing CSV
-        df = pd.read_csv(output_path)
-        
-        # Check for missing features
-        missing_features = []
-        
-        # Check for spectral contrast feature
-        if 'lbrs_spectral_contrast_singlevalue' not in df.columns:
-            missing_features.append('lbrs_spectral_contrast_singlevalue')
-        
-        # Check for OpenSMILE minPos and maxPos
-        for feature in ['osm_minPos', 'osm_maxPos']:
-            if feature not in df.columns:
-                missing_features.append(feature)
-        
-        # Check for text embedding features
-        for prefix in ['arvs_', 'DEB_', 'CSE_', 'alb_', 'BERT_', 'USE_']:
-            if not any(col.startswith(prefix) for col in df.columns):
-                missing_features.append(f"{prefix}*")
-        
-        # Check for AudioStretchy features
-        if not any(col.startswith('AS_') for col in df.columns):
-            missing_features.append('AS_*')
-        
-        # If missing features, extract them and update CSV
-        if missing_features:
-            logger.info(f"Adding missing features to CSV: {', '.join(missing_features)}")
-            
-            # Extract all features
-            all_features = extract_all_features(str(audio_path))
-            
-            # Update DataFrame
-            for key, value in all_features.items():
-                if key not in df.columns and not isinstance(value, list):
-                    df[key] = value
-            
-            # Save updated CSV
-            df.to_csv(output_path, index=False)
-            logger.info(f"Updated CSV with missing features: {output_path}")
-    else:
-        # Create new CSV with all features
-        logger.info(f"Creating new features CSV: {output_path}")
-        
-        # Extract all features
-        all_features = extract_all_features(str(audio_path))
-        
-        # Filter out list values
-        filtered_features = {k: v for k, v in all_features.items() if not isinstance(v, list)}
-        
-        # Create DataFrame and save to CSV
-        df = pd.DataFrame([filtered_features])
-        df.to_csv(output_path, index=False)
-        logger.info(f"Created new features CSV: {output_path}")
-    
-    return str(output_path)
+    return df
 
-def batch_ensure_features(audio_dir: str, output_dir: str = None, recursive: bool = False) -> List[str]:
-    """
-    Ensure feature CSV files exist for all audio files in a directory.
-    
-    Args:
-        audio_dir: Directory containing audio files
-        output_dir: Directory to save CSV files (default: same as audio files)
-        recursive: Whether to search recursively for audio files
-        
-    Returns:
-        List of paths to CSV files
-    """
-    # Find all audio files
-    audio_files = find_audio_files([audio_dir], recursive=recursive)
-    
-    if not audio_files:
-        logger.warning(f"No audio files found in {audio_dir}")
-        return []
-    
-    logger.info(f"Found {len(audio_files)} audio files")
-    
-    # Process each audio file
-    csv_files = []
-    
-    import tqdm
-    for audio_file in tqdm.tqdm(audio_files, desc="Extracting features"):
-        try:
-            csv_path = ensure_features_csv_exists(str(audio_file), output_dir)
-            csv_files.append(csv_path)
-        except Exception as e:
-            logger.error(f"Error processing {audio_file}: {e}")
-    
-    logger.info(f"Created/verified {len(csv_files)} feature CSV files")
-    return csv_files
-
-def parse_transcript_for_words(transcript_file: str) -> Dict[str, List[str]]:
-    """
-    Parse transcript file to extract words by speaker for WhisperX format.
-    
-    Args:
-        transcript_file: Path to transcript file
-        
-    Returns:
-        Dictionary with speakers as keys and lists of words as values
-    """
-    try:
-        with open(transcript_file, 'r', encoding='utf-8') as f:
-            content = f.read()
-            
-        words_by_speaker = {}
-        
-        # Basic parsing of common transcript formats
-        if '[speaker' in content.lower():
-            # Try to parse speaker-annotated format
-            import re
-            
-            # Find all speaker sections with format [Speaker X] text
-            speaker_sections = re.findall(r'\[([^\]]+)\]\s*([^[]+)', content)
-            
-            for speaker, text in speaker_sections:
-                speaker = speaker.strip().lower()
-                if 'speaker' in speaker:
-                    # Clean speaker ID
-                    speaker_id = re.search(r'speaker\s*(\d+)', speaker)
-                    if speaker_id:
-                        speaker_key = f"speaker{speaker_id.group(1)}"
-                        # Split text into words
-                        words = [w for w in re.split(r'\s+', text.strip()) if w]
-                        if speaker_key not in words_by_speaker:
-                            words_by_speaker[speaker_key] = []
-                        words_by_speaker[speaker_key].extend(words)
-        
-        # Default fallback: single speaker if no speaker annotations found
-        if not words_by_speaker:
-            # Remove timestamps and split into words
-            clean_text = re.sub(r'\[\d+:\d+:\d+\]', '', content)
-            words = [w for w in re.split(r'\s+', clean_text.strip()) if w]
-            words_by_speaker["speaker1"] = words
-            
-        return words_by_speaker
-        
-    except Exception as e:
-        logger.error(f"Error parsing transcript for words: {e}")
-        return {"speaker1": []}
-
-def is_separated_speech_file(file_path: Path) -> bool:
-    """
-    Check if a file appears to be from the speech separation module.
-    
-    Args:
-        file_path: Path to the audio file
-        
-    Returns:
-        True if the file appears to be from speech separation, False otherwise
-    """
-    # Check if file is in the separated speech output directory
-    if "separated_speech" in str(file_path):
-        return True
-    
-    # Check filename patterns that might indicate separated speech
-    if "_speech" in file_path.stem or "_separated" in file_path.stem:
-        return True
-        
-    return False
-
-# Command-line interface when run as a script
-if __name__ == "__main__":
-    import argparse
-    
-    parser = argparse.ArgumentParser(description="Extract all audio features and save to CSV")
-    parser.add_argument("input_path", nargs="+", help="Input audio files or directories")
-    parser.add_argument("--output-dir", "-o", help="Output directory for feature CSV files")
-    parser.add_argument("--recursive", "-r", action="store_true", help="Search directories recursively")
-    parser.add_argument("--debug", "-d", action="store_true", help="Enable debug logging")
+def main():
+    """Main entry point for the speech features extraction script."""
+    parser = argparse.ArgumentParser(description="Extract speech features from audio files")
+    parser.add_argument("input_paths", metavar="input_path", nargs="*", help="Audio file(s) or directory to process")
+    parser.add_argument("--input-dir", help="Directory containing input audio files")
+    parser.add_argument("--audio", action="append", help="Audio file to process (can be specified multiple times)")
+    parser.add_argument("--output-dir", default="./output/speech_features", help="Directory to save feature files")
+    parser.add_argument("--recursive", action="store_true", help="Process audio files in subdirectories recursively")
+    parser.add_argument("--batch", action="store_true", help="Process all files without manual selection")
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
+    parser.add_argument("--interactive", action="store_true", help="Force interactive mode")
+    parser.add_argument("--extract-opensmile", action="store_true", help="Extract OpenSMILE features")
+    parser.add_argument("--extract-transcription", action="store_true", help="Extract transcription features using WhisperX")
     
     args = parser.parse_args()
     
-    # Configure logging
-    log_level = logging.DEBUG if args.debug else logging.INFO
-    logging.basicConfig(
-        level=log_level,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
+    # Set debug logging if requested
+    if args.debug:
+        logging.getLogger().setLevel(logging.DEBUG)
+        logger.setLevel(logging.DEBUG)
     
-    # Process each input path
-    all_csv_files = []
-    for path in args.input_path:
-        print(f"Processing input: {path}")
+    # Collect audio files from all sources
+    audio_files = []
+    
+    # Add files from input_paths positional argument
+    for path in args.input_paths:
         path = Path(path)
-        
-        if path.is_file():
-            # Handle single file
-            try:
-                csv_file = ensure_features_csv_exists(str(path), args.output_dir)
-                all_csv_files.append(csv_file)
-                print(f"Processed file: {path}")
-            except Exception as e:
-                print(f"Error processing {path}: {e}")
-        
-        elif path.is_dir():
-            # Handle directory
-            try:
-                csv_files = batch_ensure_features(str(path), args.output_dir, args.recursive)
-                all_csv_files.extend(csv_files)
-                print(f"Processed directory: {path}")
-            except Exception as e:
-                print(f"Error processing directory {path}: {e}")
-        
+        if path.is_dir():
+            found_files = find_audio_files([path], args.recursive)
+            logger.info(f"Found {len(found_files)} files in positional arg: {path}")
+            audio_files.extend(found_files)
+        elif path.suffix.lower() in SUPPORTED_AUDIO_FORMATS:
+            audio_files.append(path)
+    
+    # Add files from --audio flag
+    if args.audio:
+        for audio_path in args.audio:
+            path = Path(audio_path)
+            if path.exists():
+                audio_files.append(path)
+    
+    # Add files from --input-dir flag
+    if args.input_dir:
+        input_dir = Path(args.input_dir)
+        if input_dir.is_dir():
+            found_files = find_audio_files([input_dir], args.recursive)
+            logger.info(f"Found {len(found_files)} files in input_dir: {input_dir}")
+            audio_files.extend(found_files)
         else:
-            print(f"Path not found: {path}")
+            logger.warning(f"Specified input directory does not exist: {input_dir}")
     
-    print(f"\nExtracted features for {len(all_csv_files)} audio files")
-    print(f"Features CSV files contain all requested audio and text features.")
+    # Ensure we have unique files
+    audio_files = sorted(set(str(f) for f in audio_files))
+    audio_files = [Path(f) for f in audio_files]
     
-    sys.exit(0 if all_csv_files else 1)
+    if not audio_files:
+        logger.error("No audio files found. Please specify input files or directories.")
+        return 1
+    
+    logger.info(f"Found {len(audio_files)} audio files to process")
+    
+    # Create output directory
+    ensure_dir_exists(args.output_dir)
+    
+    # Process each audio file
+    for audio_file in audio_files:
+        try:
+            # Extract all features
+            logger.info(f"Processing {audio_file}")
+            extract_all_speech_features(str(audio_file), args.output_dir)
+            
+        except Exception as e:
+            logger.error(f"Error processing {audio_file}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+    
+    logger.info("Speech feature extraction completed")
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())

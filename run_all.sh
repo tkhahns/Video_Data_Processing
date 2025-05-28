@@ -102,33 +102,61 @@ if command -v poetry &>/dev/null; then
     # STEP 2: Attempt Hugging Face login before asking for token
     echo -e "\n=== Hugging Face Authentication ==="
     echo "This tool requires Hugging Face authentication for accessing models."
-    echo "First, we'll attempt login with the Hugging Face CLI."
-    
-    # Try to login with CLI
+
+    # First ensure huggingface-hub is properly installed with CLI support
+    echo "Installing and upgrading Hugging Face CLI..."
+    poetry run pip install --upgrade "huggingface_hub[cli]" || echo "Warning: Failed to install huggingface_hub CLI"
+
+    # Create a Hugging Face token file that all scripts can use
+    HF_TOKEN_FILE="$PROJECT_ROOT/.huggingface_token_temp"
+
+    # Function to safely remove token file on exit
+    cleanup_hf_token() {
+        if [ -f "$HF_TOKEN_FILE" ]; then
+            echo "Removing temporary Hugging Face token file"
+            rm -f "$HF_TOKEN_FILE"
+        fi
+        
+        if [ -n "$HUGGINGFACE_TOKEN" ]; then
+            echo "Clearing Hugging Face token from environment"
+            unset HUGGINGFACE_TOKEN
+        fi
+    }
+    trap cleanup_hf_token EXIT
+
+    # Try login with CLI first
     HF_LOGIN_SUCCESS=false
     echo -e "\nAttempting Hugging Face CLI login..."
     if poetry run huggingface-cli login; then
         echo "Hugging Face CLI login successful!"
         HF_LOGIN_SUCCESS=true
+        
+        # Get the token from huggingface-hub cache
+        poetry run python -c "from huggingface_hub import HfFolder; token = HfFolder.get_token(); print(token if token else '')" > "$HF_TOKEN_FILE"
     else
         echo "Hugging Face CLI login failed or was canceled."
         echo "You will need to provide your Hugging Face token directly."
         
-        # Prompt for token if CLI login failed
+        # Prompt for token
         echo "You can get your token from: https://huggingface.co/settings/tokens"
-        echo "Note: Your token will be passed to parallel processes and used only for this session."
+        echo "Note: Your token will be used for this session only."
         read -sp "Enter your Hugging Face token (input will be hidden): " HUGGINGFACE_TOKEN
         echo ""
         
-        # Validate token is provided
-        if [ -z "$HUGGINGFACE_TOKEN" ]; then
-            echo "No token provided. Some features may not work correctly."
+        # Save token to temporary file
+        if [ -n "$HUGGINGFACE_TOKEN" ]; then
+            echo "$HUGGINGFACE_TOKEN" > "$HF_TOKEN_FILE"
+            echo "Token received and saved for this session"
         else
-            echo "Token received for this session"
-            export HUGGINGFACE_TOKEN
+            echo "No token provided. Some features may not work correctly."
         fi
     fi
-    
+
+    # Export the token to the current environment
+    if [ -f "$HF_TOKEN_FILE" ]; then
+        export HUGGINGFACE_TOKEN=$(cat "$HF_TOKEN_FILE")
+    fi
+
     # Make scripts executable
     echo -e "\n[2/6] Preparing scripts..."
     chmod +x "$PROJECT_ROOT/scripts/macos/run_separate_speech.sh"
@@ -259,9 +287,69 @@ if command -v poetry &>/dev/null; then
         SPEECH_EXIT=$?
     fi
     
-    # Only proceed with parallel processing if speech separation was successful
+    # Only proceed with processing if speech separation was successful
     if [ $SPEECH_EXIT -eq 0 ]; then
-        echo -e "\n[4/6] Starting parallel processing tasks..."
+        echo -e "\n[4/6] Running speech-to-text and emotion recognition tasks..."
+        
+        # Create directories for outputs
+        TRANSCRIPT_OUTPUT_DIR="$RESULTS_DIR/transcripts"
+        EMOTIONS_AND_POSE_DIR="$RESULTS_DIR/emotions_and_pose"
+        mkdir -p "$TRANSCRIPT_OUTPUT_DIR" "$EMOTIONS_AND_POSE_DIR"
+        
+        # 1. Run speech-to-text transcription
+        echo "Starting speech-to-text transcription..."
+        # Set environment variables for subprocess
+        if [ -f "$HF_TOKEN_FILE" ]; then
+            export HUGGINGFACE_TOKEN=$(cat "$HF_TOKEN_FILE")
+        fi
+        
+        cmd="poetry run scripts/macos/run_speech_to_text.sh --input-dir \"$SPEECH_OUTPUT_DIR\" --output-dir \"$TRANSCRIPT_OUTPUT_DIR\" --diarize $BATCH_FLAG"
+        echo "Executing: $cmd"
+        eval $cmd
+        TRANSCRIPT_EXIT=$?
+        
+        if [ $TRANSCRIPT_EXIT -ne 0 ]; then
+            echo "Speech-to-text transcription failed with exit code $TRANSCRIPT_EXIT"
+        else
+            echo "Speech-to-text transcription completed successfully"
+        fi
+        
+        # 2. Run emotion and pose recognition
+        echo -e "\nStarting emotion and pose recognition..."
+        if [ ${#EMOTION_VIDEOS[@]} -eq 0 ]; then
+            echo "No videos selected for emotion and pose recognition. Skipping this step."
+            EMOTION_EXIT=1
+        else
+            # Pass individual video files and point to speech directory for audio sources
+            video_args=""
+            for video_path in "${EMOTION_VIDEOS[@]}"; do
+                # Get base filename for matching with separated speech
+                base_name=$(basename "$video_path" | sed 's/\.[^.]*$//')
+                video_args+=" --video \"$video_path\""
+                
+                # Check if corresponding audio file exists and add it specifically
+                audio_file="$SPEECH_OUTPUT_DIR/$base_name.wav"
+                if [ -f "$audio_file" ]; then
+                    echo " - Found matching audio file for $base_name: $audio_file"
+                    video_args+=" --audio-path \"$audio_file\""
+                fi
+            done
+            
+            cmd="poetry run scripts/macos/run_emotion_and_pose_recognition.sh $video_args --output-dir \"$EMOTIONS_AND_POSE_DIR\" --feature-models all --speech-dir \"$SPEECH_OUTPUT_DIR\" $BATCH_FLAG"
+            echo "Executing: $cmd"
+            eval $cmd
+                
+            EMOTION_EXIT=$?
+            
+            if [ $EMOTION_EXIT -ne 0 ]; then
+                echo "Emotion and pose recognition failed with exit code $EMOTION_EXIT"
+            else
+                echo "Emotion and pose recognition completed successfully"
+            fi
+        fi
+        
+        # 3. Now run feature extraction steps AFTER processing
+        echo -e "\n[5/6] Running feature extraction steps..."
         
         # Create directories for features
         AUDIO_FEATURES_DIR="$RESULTS_DIR/audio_features"
@@ -269,189 +357,123 @@ if command -v poetry &>/dev/null; then
         MULTIMODAL_FEATURES_DIR="$RESULTS_DIR/multimodal_features"
         mkdir -p "$AUDIO_FEATURES_DIR" "$VIDEO_FEATURES_DIR" "$MULTIMODAL_FEATURES_DIR"
         
-        # 1. Start speech-to-text in parallel
-        echo "Starting speech-to-text transcription in parallel..."
-        (
-            cmd="poetry run scripts/macos/run_speech_to_text.sh --input-dir \"$SPEECH_OUTPUT_DIR\" --output-dir \"$TRANSCRIPT_OUTPUT_DIR\" --diarize $BATCH_FLAG"
+        # 3a. Run audio feature extraction
+        echo -e "\nStarting audio feature extraction..."
+        cmd="poetry run scripts/macos/extract_audio_features.sh --input-dir \"$SPEECH_OUTPUT_DIR\" --output-dir \"$AUDIO_FEATURES_DIR\" $BATCH_FLAG"
+        echo "Executing: $cmd"
+        eval $cmd
+        AUDIO_FEATURES_EXIT=$?
+        
+        if [ $AUDIO_FEATURES_EXIT -ne 0 ]; then
+            echo "Audio feature extraction failed with exit code $AUDIO_FEATURES_EXIT"
+        else
+            echo "Audio feature extraction completed successfully"
+        fi
+        
+        # 3b. Run video feature extraction
+        echo -e "\nStarting video feature extraction..."
+        if [ ${#EMOTION_VIDEOS[@]} -eq 0 ]; then
+            echo "No videos selected for video feature extraction. Skipping this step."
+            VIDEO_FEATURES_EXIT=1
+        else
+            # Build video arguments
+            video_args=""
+            for video_path in "${EMOTION_VIDEOS[@]}"; do
+                video_args+=" --video \"$video_path\""
+                echo " - Extracting video features from: $(basename "$video_path")"
+            done
+            
+            # Extract visual-only features
+            cmd="poetry run scripts/macos/extract_video_features.sh $video_args --output-dir \"$VIDEO_FEATURES_DIR\" $BATCH_FLAG"
             echo "Executing: $cmd"
             eval $cmd
-            TRANSCRIPT_EXIT=$?
-            echo "TRANSCRIPT_EXIT=$TRANSCRIPT_EXIT" > "$TRANSCRIPT_SEMAPHORE"
-            echo -e "\nSpeech-to-text completed with exit code $TRANSCRIPT_EXIT"
-        ) &
-        TRANSCRIPT_PID=$!
-        
-        # 2. Start audio feature extraction in parallel
-        echo "Starting audio feature extraction in parallel..."
-        (
-            cmd="poetry run scripts/macos/extract_audio_features.sh --input-dir \"$SPEECH_OUTPUT_DIR\" --output-dir \"$AUDIO_FEATURES_DIR\" $BATCH_FLAG"
-            echo "Executing: $cmd"
-            eval $cmd
-            AUDIO_FEATURES_EXIT=$?
-            echo "AUDIO_FEATURES_EXIT=$AUDIO_FEATURES_EXIT" > "$AUDIO_FEATURES_SEMAPHORE"
-            echo -e "\nAudio feature extraction completed with exit code $AUDIO_FEATURES_EXIT"
-        ) &
-        AUDIO_FEATURES_PID=$!
-        
-        # 3. Start emotion and pose recognition in parallel
-        echo "Starting emotion and pose recognition in parallel..."
-        (
-            # Only proceed if videos were selected
-            if [ ${#EMOTION_VIDEOS[@]} -eq 0 ]; then
-                echo "No videos selected for emotion and pose recognition. Skipping this step."
-                EMOTION_EXIT=1
+            
+            VIDEO_FEATURES_EXIT=$?
+            
+            if [ $VIDEO_FEATURES_EXIT -ne 0 ]; then
+                echo "Video feature extraction failed with exit code $VIDEO_FEATURES_EXIT"
             else
-                # Pass individual video files and point to speech directory for audio sources
-                video_args=""
-                for video_path in "${EMOTION_VIDEOS[@]}"; do
-                    # Get base filename for matching with separated speech
-                    base_name=$(basename "$video_path" | sed 's/\.[^.]*$//')
-                    video_args+=" --video \"$video_path\""
-                    
-                    # Check if corresponding audio file exists and add it specifically
-                    audio_file="$SPEECH_OUTPUT_DIR/$base_name.wav"
-                    if [ -f "$audio_file" ]; then
-                        echo " - Found matching audio file for $base_name: $audio_file"
-                        video_args+=" --audio-path \"$audio_file\""
-                    fi
-                done
-                
-                cmd="poetry run scripts/macos/run_emotion_and_pose_recognition.sh $video_args --output-dir \"$EMOTIONS_AND_POSE_DIR\" --feature-models all --speech-dir \"$SPEECH_OUTPUT_DIR\" $BATCH_FLAG"
-                echo "Executing: $cmd"
-                eval $cmd
-                    
-                EMOTION_EXIT=$?
+                echo "Video feature extraction completed successfully"
             fi
-            echo "EMOTION_EXIT=$EMOTION_EXIT" > "$EMOTION_SEMAPHORE"
-            echo -e "\nEmotion and pose recognition completed with exit code $EMOTION_EXIT"
-        ) &
-        EMOTION_PID=$!
+        fi
         
-        # 4. Start video feature extraction in parallel  
-        echo "Starting video feature extraction in parallel..."
-        (
-            # Only process if videos were selected
-            if [ ${#EMOTION_VIDEOS[@]} -eq 0 ]; then
-                echo "No videos selected for video feature extraction. Skipping this step."
-                VIDEO_FEATURES_EXIT=1
-            else
-                # Build video arguments
-                video_args=""
-                for video_path in "${EMOTION_VIDEOS[@]}"; do
-                    video_args+=" --video \"$video_path\""
-                    echo " - Extracting video features from: $(basename "$video_path")"
-                done
-                
-                # Extract visual-only features
-                cmd="poetry run scripts/macos/extract_video_features.sh $video_args --output-dir \"$VIDEO_FEATURES_DIR\" $BATCH_FLAG"
-                echo "Executing: $cmd"
-                eval $cmd
-                
-                VIDEO_FEATURES_EXIT=$?
-            fi
-            echo "VIDEO_FEATURES_EXIT=$VIDEO_FEATURES_EXIT" > "$VIDEO_FEATURES_SEMAPHORE"
-            echo -e "\nVideo feature extraction completed with exit code $VIDEO_FEATURES_EXIT"
-        ) &
-        VIDEO_FEATURES_PID=$!
-        
-        # 5. Start multimodal feature extraction in parallel
-        echo "Starting multimodal feature extraction in parallel..."
-        (
+        # 3c. Run multimodal feature extraction
+        echo -e "\nStarting multimodal feature extraction..."
+        if [ ${#EMOTION_VIDEOS[@]} -eq 0 ]; then
+            echo "No videos selected for multimodal feature extraction. Skipping this step."
+            MULTIMODAL_EXIT=1
+        else
             # Ensure the token is passed to the subprocess
             if [ -n "$HUGGINGFACE_TOKEN" ]; then
                 export HUGGINGFACE_TOKEN
             fi
             
-            # Only process if videos were selected
-            if [ ${#EMOTION_VIDEOS[@]} -eq 0 ]; then
-                echo "No videos selected for multimodal feature extraction. Skipping this step."
-                MULTIMODAL_EXIT=1
+            # Build video-audio pair arguments
+            video_args=""
+            for video_path in "${EMOTION_VIDEOS[@]}"; do
+                # Get base filename for matching with separated speech
+                base_name=$(basename "$video_path" | sed 's/\.[^.]*$//')
+                video_args+=" --video \"$video_path\""
+                
+                # Check if corresponding audio file exists
+                audio_file="$SPEECH_OUTPUT_DIR/$base_name.wav"
+                if [ -f "$audio_file" ]; then
+                    echo " - Found matching audio file for $base_name: $audio_file"
+                    video_args+=" --audio-path \"$audio_file\""
+                fi
+                
+                echo " - Extracting multimodal features from: $base_name"
+            done
+            
+            # Extract multimodal features
+            cmd="poetry run scripts/macos/extract_multimodal_features.sh $video_args --speech-dir \"$SPEECH_OUTPUT_DIR\" --output-dir \"$MULTIMODAL_FEATURES_DIR\" $BATCH_FLAG"
+            echo "Executing: $cmd"
+            eval $cmd
+            
+            MULTIMODAL_EXIT=$?
+            
+            if [ $MULTIMODAL_EXIT -ne 0 ]; then
+                echo "Multimodal feature extraction failed with exit code $MULTIMODAL_EXIT"
             else
-                # Build video-audio pair arguments
-                video_args=""
-                for video_path in "${EMOTION_VIDEOS[@]}"; do
-                    # Get base filename for matching with separated speech
-                    base_name=$(basename "$video_path" | sed 's/\.[^.]*$//')
-                    video_args+=" --video \"$video_path\""
-                    
-                    # Check if corresponding audio file exists
-                    audio_file="$SPEECH_OUTPUT_DIR/$base_name.wav"
-                    if [ -f "$audio_file" ]; then
-                        echo " - Found matching audio file for $base_name: $audio_file"
-                        video_args+=" --audio-path \"$audio_file\""
-                    fi
-                    
-                    echo " - Extracting multimodal features from: $base_name"
-                done
-                
-                # Extract multimodal features
-                cmd="poetry run scripts/macos/extract_multimodal_features.sh $video_args --speech-dir \"$SPEECH_OUTPUT_DIR\" --output-dir \"$MULTIMODAL_FEATURES_DIR\" $BATCH_FLAG"
-                echo "Executing: $cmd"
-                eval $cmd
-                
-                MULTIMODAL_EXIT=$?
+                echo "Multimodal feature extraction completed successfully"
             fi
-            echo "MULTIMODAL_EXIT=$MULTIMODAL_EXIT" > "$MULTIMODAL_SEMAPHORE"
-            echo -e "\nMultimodal feature extraction completed with exit code $MULTIMODAL_EXIT"
-        ) &
-        MULTIMODAL_PID=$!
+        fi
         
-        # Wait for all parallel processes to complete
-        echo "Waiting for all parallel processes to complete..."
-        wait $TRANSCRIPT_PID
-        wait $AUDIO_FEATURES_PID
-        wait $VIDEO_FEATURES_PID
-        wait $MULTIMODAL_PID
-        wait $EMOTION_PID
+        # 4. Create pipeline_output.csv that merges all results
+        echo -e "\n[6/6] Creating pipeline output CSV with combined features..."
         
-        # Read exit statuses
-        [ -f "$TRANSCRIPT_SEMAPHORE" ] && source "$TRANSCRIPT_SEMAPHORE" || TRANSCRIPT_EXIT=1
-        [ -f "$AUDIO_FEATURES_SEMAPHORE" ] && source "$AUDIO_FEATURES_SEMAPHORE" || AUDIO_FEATURES_EXIT=1
-        [ -f "$VIDEO_FEATURES_SEMAPHORE" ] && source "$VIDEO_FEATURES_SEMAPHORE" || VIDEO_FEATURES_EXIT=1
-        [ -f "$MULTIMODAL_SEMAPHORE" ] && source "$MULTIMODAL_SEMAPHORE" || MULTIMODAL_EXIT=1
-        [ -f "$EMOTION_SEMAPHORE" ] && source "$EMOTION_SEMAPHORE" || EMOTION_EXIT=1
+        # Pass all feature directories to merge script
+        poetry run python -c "from utils.merge_features import create_pipeline_output; create_pipeline_output('$RESULTS_DIR', speech_features_dir='$AUDIO_FEATURES_DIR', video_features_dir='$VIDEO_FEATURES_DIR', multimodal_features_dir='$MULTIMODAL_FEATURES_DIR')"
+        CSV_EXIT=$?
         
-        # Clean up semaphore directory
-        rm -rf "$SEMAPHORE_DIR"
+        if [ $CSV_EXIT -eq 0 ]; then
+            echo "✅ Pipeline output CSV created successfully"
+            echo "- CSV output with combined features: $RESULTS_DIR/pipeline_output.csv"
+            echo "- Summary report: $RESULTS_DIR/pipeline_summary.txt"
+            echo "- Combined features across all runs: $PROJECT_ROOT/output/combined_features.csv"
+            echo "- Pipeline history: $PROJECT_ROOT/output/pipeline_history.csv"
+        else
+            echo "❌ Failed to create pipeline output CSV"
+        fi
     else
         echo -e "\nSpeech separation failed with exit code $SPEECH_EXIT"
         echo "Cannot proceed with subsequent steps that require separated speech."
         TRANSCRIPT_EXIT=1
+        EMOTION_EXIT=1
         AUDIO_FEATURES_EXIT=1
         VIDEO_FEATURES_EXIT=1
         MULTIMODAL_EXIT=1
-        EMOTION_EXIT=1
     fi
     
     # Report the final status of all pipeline steps
     echo -e "\n===== Pipeline Execution Summary ====="
     echo "- Speech Separation: $([ $SPEECH_EXIT -eq 0 ] && echo "✅ Success" || echo "❌ Failed")"
     echo "- Speech-to-Text: $([ $TRANSCRIPT_EXIT -eq 0 ] && echo "✅ Success" || echo "❌ Failed")"
+    echo "- Emotion and Pose Recognition: $([ $EMOTION_EXIT -eq 0 ] && echo "✅ Success" || echo "❌ Failed")"
     echo "- Audio Feature Extraction: $([ $AUDIO_FEATURES_EXIT -eq 0 ] && echo "✅ Success" || echo "❌ Failed")"
     echo "- Video Feature Extraction: $([ $VIDEO_FEATURES_EXIT -eq 0 ] && echo "✅ Success" || echo "❌ Failed")"
     echo "- Multimodal Feature Extraction: $([ $MULTIMODAL_EXIT -eq 0 ] && echo "✅ Success" || echo "❌ Failed")"
-    echo "- Emotion and Pose Recognition: $([ $EMOTION_EXIT -eq 0 ] && echo "✅ Success" || echo "❌ Failed")"
-    
-    # Create pipeline_output.csv that merges all results
-    echo -e "\n[5/6] Creating pipeline output CSV with combined features..."
-    
-    # Pass all feature directories to merge script
-    AUDIO_FEATURES_DIR="$RESULTS_DIR/audio_features"
-    VIDEO_FEATURES_DIR="$RESULTS_DIR/video_features"
-    MULTIMODAL_FEATURES_DIR="$RESULTS_DIR/multimodal_features"
-    
-    poetry run python -c "from utils.merge_features import create_pipeline_output; create_pipeline_output('$RESULTS_DIR', speech_features_dir='$AUDIO_FEATURES_DIR', video_features_dir='$VIDEO_FEATURES_DIR', multimodal_features_dir='$MULTIMODAL_FEATURES_DIR')"
-    CSV_EXIT=$?
-    
-    if [ $CSV_EXIT -eq 0 ]; then
-        echo "✅ Pipeline output CSV created successfully"
-        echo "- CSV output with combined features: $RESULTS_DIR/pipeline_output.csv"
-        echo "- Summary report: $RESULTS_DIR/pipeline_summary.txt"
-        echo "- Combined features across all runs: $PROJECT_ROOT/output/combined_features.csv"
-        echo "- Pipeline history: $PROJECT_ROOT/output/pipeline_history.csv"
-    else
-        echo "❌ Failed to create pipeline output CSV"
-    fi
+    echo "- Combined Features CSV: $([ $CSV_EXIT -eq 0 ] && echo "✅ Success" || echo "❌ Failed")"
 
     # Calculate total process time
     END_TIME=$(date +%s)

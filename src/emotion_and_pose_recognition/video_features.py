@@ -27,6 +27,43 @@ except ImportError:
 
 from .utils import find_video_files, select_files_from_list, clean_memory
 
+class VideoFeatureExtractor:
+    """Class for extracting visual features from videos."""
+    
+    def __init__(self, models=None, use_gpu=True, sample_rate=1):
+        """
+        Initialize the video feature extractor.
+        
+        Args:
+            models: List of feature models to use
+            use_gpu: Whether to use GPU acceleration when available
+            sample_rate: Process every N-th frame
+        """
+        self.models = models if models else ["all"]
+        self.use_gpu = use_gpu
+        self.sample_rate = sample_rate
+        
+    def extract(self, video_path, output_dir, video_name=None):
+        """
+        Extract features from a video file.
+        
+        Args:
+            video_path: Path to the video file
+            output_dir: Directory to save extracted features
+            video_name: Optional name to use for the video
+            
+        Returns:
+            Dictionary of extracted features
+        """
+        return extract_video_features(
+            video_path=video_path,
+            output_dir=output_dir,
+            models=self.models,
+            use_gpu=self.use_gpu,
+            sample_rate=self.sample_rate,
+            video_name=video_name
+        )
+
 def extract_video_features(video_path, output_dir, models=None, use_gpu=True, sample_rate=1, video_name=None, **kwargs):
     """
     Extract visual features from a video file.

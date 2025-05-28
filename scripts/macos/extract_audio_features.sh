@@ -26,6 +26,12 @@ else
         echo "Poetry installation had issues. Retrying with common dependencies only..."
         poetry install --with common
     }
+
+    # Install additional dependencies for audio feature extraction
+    echo "Installing additional dependencies for audio feature extraction..."
+    # Adding --quiet flag to suppress installation errors/warnings
+    poetry run pip install --quiet --upgrade librosa 2>/dev/null || echo "Warning: librosa installation failed, using fallback features"
+    poetry run pip install --quiet --upgrade opensmile 2>/dev/null || echo "Warning: Some audio feature dependencies could not be installed"
 fi
 
 # Help message if --help flag is provided
@@ -80,13 +86,13 @@ cmd_args=()
 if [ -n "$input_dir" ] && [ ${#audio_files[@]} -eq 0 ]; then
     echo "Using input directory: $input_dir"
     cmd_args+=("--input-dir" "$input_dir")
+else
+    # Add individual audio files if provided
+    for audio in "${audio_files[@]}"; do
+        echo "Processing audio file: $audio"
+        cmd_args+=("--audio" "$audio")
+    done
 fi
-
-# Add individual audio files if provided
-for audio in "${audio_files[@]}"; do
-    echo "Processing audio file: $audio"
-    cmd_args+=("--audio" "$audio")
-done
 
 # Add output directory if specified
 if [ -n "$output_dir" ]; then

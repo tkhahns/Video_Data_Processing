@@ -17,11 +17,13 @@ if __name__ == "__main__" or os.path.basename(sys.argv[0]) == "__main__.py":
     from src.speech_to_text import transcription, speech_features
     from src.speech_to_text import DEFAULT_MODELS_DIR, DEFAULT_OUTPUT_DIR, DEFAULT_AUDIO_DIR
     from src.speech_to_text import DEFAULT_MODEL, DEFAULT_LANGUAGE, DEFAULT_SEGMENT_SIZE, SUPPORTED_MODELS
+    from src.speech_to_text import SUPPORTED_AUDIO_FORMATS
 else:
     # Use relative imports when imported as a module
     from . import transcription, speech_features
     from . import DEFAULT_MODELS_DIR, DEFAULT_OUTPUT_DIR, DEFAULT_AUDIO_DIR
     from . import DEFAULT_MODEL, DEFAULT_LANGUAGE, DEFAULT_SEGMENT_SIZE, SUPPORTED_MODELS
+    from . import SUPPORTED_AUDIO_FORMATS
 
 # Get logger for this module
 logger = logging.getLogger(__name__)
@@ -61,8 +63,6 @@ def select_files(directory: Path, file_type: str = "audio"):
     Returns:
         Tuple of (selected file paths, output format, use_diarization)
     """
-    from src.speech_to_text import SUPPORTED_AUDIO_FORMATS
-    
     # Check if separated speech directory exists, prioritize that
     separated_speech_dir = Path("./output/separated_speech")
     if separated_speech_dir.exists() and separated_speech_dir.is_dir():
@@ -74,9 +74,10 @@ def select_files(directory: Path, file_type: str = "audio"):
     # Find all audio files in the directory
     all_files = []
     if directory.exists():
-        for file_path in directory.glob("**/*"):
-            if file_path.is_file() and file_path.suffix.lower() in SUPPORTED_AUDIO_FORMATS:
-                all_files.append(file_path)
+        for audio_format in SUPPORTED_AUDIO_FORMATS:
+            for file_path in directory.glob(f"**/*{audio_format}"):
+                if file_path.is_file():
+                    all_files.append(file_path)
     
     if not all_files:
         print(f"\nNo {file_type} files found in {directory}")
@@ -324,14 +325,6 @@ def main():
     if args.debug:
         logger.setLevel(logging.DEBUG)
         logging.getLogger().setLevel(logging.DEBUG)
-    
-    # Ensure output directory exists
-    speech_features.ensure_dir_exists(args.output_dir)
-    
-    # Check for dependencies
-    if not speech_features.check_dependencies():
-        logger.error("Missing dependencies. Please install required packages.")
-        return 1
     
     # Handle input_dir if provided - find all audio files in that directory
     if args.input_dir:
