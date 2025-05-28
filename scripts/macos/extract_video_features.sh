@@ -3,8 +3,8 @@
 # Exit on error
 set -e
 
-echo "=== Video Data Processing Speech Separation ==="
-echo "This script extracts and isolates speech from video files."
+echo "=== Video Data Processing: Video Feature Extraction ==="
+echo "This script extracts visual features from video files."
 
 # Get the script's directory and project root
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
@@ -12,6 +12,22 @@ PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 
 # Change to project root
 cd "$PROJECT_ROOT"
+
+# Check for Hugging Face token in environment - FIXED for non-interactive execution
+if [ -z "$HUGGINGFACE_TOKEN" ]; then
+    echo "No Hugging Face token found in environment. Some features may not work correctly."
+fi
+
+# Setup function to delete token on exit
+cleanup_token() {
+    if [ -n "$HUGGINGFACE_TOKEN" ]; then
+        echo "Clearing Hugging Face token from environment"
+        unset HUGGINGFACE_TOKEN
+    fi
+}
+
+# Register the cleanup function to run on script exit
+trap cleanup_token EXIT
 
 # Check if Poetry is installed
 if ! command -v poetry &> /dev/null; then
@@ -22,7 +38,7 @@ if ! command -v poetry &> /dev/null; then
 else
     # Install dependencies using Poetry
     echo -e "\n[1/2] Installing dependencies with Poetry..."
-    poetry install --with speech --with common || {
+    poetry install --with emotion --with common || {
         echo "Poetry installation had issues. Retrying with common dependencies only..."
         poetry install --with common
     }
@@ -30,17 +46,15 @@ fi
 
 # Help message if --help flag is provided
 if [ "$1" == "--help" ] || [ "$1" == "-h" ]; then
-    echo -e "\nUsage: ./run_separate_speech.sh [options] <video_file(s)>"
+    echo -e "\nUsage: ./extract_video_features.sh [options]"
     echo ""
     echo "Options:"
-    echo "  --input-dir DIR      Directory containing input video files (default: ./data/videos)"
-    echo "  --output-dir DIR     Directory to save separated speech files (default: ./output/separated_speech)"
-    echo "  --model MODEL        Speech separation model to use (sepformer, conv-tasnet)" 
-    echo "  --file-type TYPE     Output file format: wav (1), mp3 (2), or both (3) (default: mp3)"
-    echo "  --recursive          Process video files in subdirectories recursively"
+    echo "  --input-dir DIR      Directory containing input video files"
+    echo "  --video FILE         Single video file to process (can be specified multiple times)"
+    echo "  --output-dir DIR     Directory to save feature files (default: ./output/video_features)"
+    echo "  --models LIST        Space-separated list of models to use: mediapipe pyfeat optical_flow pare vitpose all"
+    echo "  --batch              Process all files without manual selection"
     echo "  --debug              Enable debug logging"
-    echo "  --interactive        Force interactive video selection mode"
-    echo "  --batch              Run in batch mode, processing all files without manual selection"
     echo "  --help               Show this help message"
     echo ""
     echo "If run without arguments, the script will show an interactive video selection menu."
@@ -52,6 +66,7 @@ input_dir=""
 output_dir=""
 batch_mode=false
 video_files=()
+models=""
 other_args=()
 i=1
 while [ $i -le $# ]; do
@@ -67,14 +82,17 @@ while [ $i -le $# ]; do
     elif [ "$arg" == "--video" ] && [ $i -lt $# ]; then
         i=$((i+1))
         video_files+=("${!i}")
+    elif [ "$arg" == "--models" ] && [ $i -lt $# ]; then
+        i=$((i+1))
+        models="${!i}"
     else
         other_args+=("$arg")
     fi
     i=$((i+1))
 done
 
-# Run the speech separation script
-echo -e "\n[2/2] Running speech separation..."
+# Run the video feature extraction script
+echo -e "\n[2/2] Running video feature extraction..."
 
 # Build command based on input parameters
 cmd_args=()
@@ -86,16 +104,23 @@ if [ -n "$input_dir" ] && [ ${#video_files[@]} -eq 0 ]; then
 fi
 
 # Add individual video files if provided
-if [ ${#video_files[@]} -gt 0 ]; then
-    echo "Processing ${#video_files[@]} individual video files"
-    for video in "${video_files[@]}"; do
-        cmd_args+=("$video")
-    done
-fi
+for video in "${video_files[@]}"; do
+    echo "Processing video file: $video"
+    cmd_args+=("--video" "$video")
+done
 
 # Add output directory if specified
 if [ -n "$output_dir" ]; then
     cmd_args+=("--output-dir" "$output_dir")
+fi
+
+# Add feature models if specified - use visual-only models by default
+if [ -n "$models" ]; then
+    echo "Using feature models: $models"
+    cmd_args+=("--models" $models)
+else
+    echo "Using default visual feature models"
+    cmd_args+=("--models" "mediapipe pyfeat optical_flow pare vitpose psa rsn au_detector dan eln")
 fi
 
 # Add batch mode flag if specified
@@ -112,15 +137,15 @@ done
 # Use Poetry to run the script
 if [ ${#cmd_args[@]} -eq 0 ] && [ ${#other_args[@]} -eq 0 ]; then
     echo "Entering interactive mode..."
-    poetry run python -m src.separate_speech --interactive
+    poetry run python -m src.emotion_and_pose_recognition.video_features --interactive
 else
     # Otherwise, pass all arguments to the script
-    poetry run python -m src.separate_speech "${cmd_args[@]}"
+    poetry run python -m src.emotion_and_pose_recognition.video_features "${cmd_args[@]}"
 fi
 
 if [ $? -eq 0 ]; then
-    echo -e "\nSpeech separation process completed successfully."
+    echo -e "\nVideo feature extraction completed successfully."
 else
-    echo -e "\nAn error occurred during the speech separation process."
+    echo -e "\nAn error occurred during video feature extraction."
     exit 1
 fi

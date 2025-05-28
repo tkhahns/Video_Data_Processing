@@ -3,8 +3,8 @@
 # Exit on error
 set -e
 
-echo "=== Video Data Processing Speech Separation ==="
-echo "This script extracts and isolates speech from video files."
+echo "=== Video Data Processing: Audio Feature Extraction ==="
+echo "This script extracts features from audio files."
 
 # Get the script's directory and project root
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
@@ -26,24 +26,27 @@ else
         echo "Poetry installation had issues. Retrying with common dependencies only..."
         poetry install --with common
     }
+
+    # Install additional dependencies for audio feature extraction
+    echo "Installing additional dependencies for audio feature extraction..."
+    # Adding --quiet flag to suppress installation errors/warnings
+    poetry run pip install --quiet --upgrade librosa 2>/dev/null || echo "Warning: librosa installation failed, using fallback features"
+    poetry run pip install --quiet --upgrade opensmile 2>/dev/null || echo "Warning: Some audio feature dependencies could not be installed"
 fi
 
 # Help message if --help flag is provided
 if [ "$1" == "--help" ] || [ "$1" == "-h" ]; then
-    echo -e "\nUsage: ./run_separate_speech.sh [options] <video_file(s)>"
+    echo -e "\nUsage: ./extract_audio_features.sh [options]"
     echo ""
     echo "Options:"
-    echo "  --input-dir DIR      Directory containing input video files (default: ./data/videos)"
-    echo "  --output-dir DIR     Directory to save separated speech files (default: ./output/separated_speech)"
-    echo "  --model MODEL        Speech separation model to use (sepformer, conv-tasnet)" 
-    echo "  --file-type TYPE     Output file format: wav (1), mp3 (2), or both (3) (default: mp3)"
-    echo "  --recursive          Process video files in subdirectories recursively"
+    echo "  --input-dir DIR      Directory containing input audio files"
+    echo "  --audio FILE         Single audio file to process (can be specified multiple times)"
+    echo "  --output-dir DIR     Directory to save feature files (default: ./output/audio_features)"
+    echo "  --batch              Process all files without manual selection"
     echo "  --debug              Enable debug logging"
-    echo "  --interactive        Force interactive video selection mode"
-    echo "  --batch              Run in batch mode, processing all files without manual selection"
     echo "  --help               Show this help message"
     echo ""
-    echo "If run without arguments, the script will show an interactive video selection menu."
+    echo "If run without arguments, the script will show an interactive audio selection menu."
     exit 0
 fi
 
@@ -51,7 +54,7 @@ fi
 input_dir=""
 output_dir=""
 batch_mode=false
-video_files=()
+audio_files=()
 other_args=()
 i=1
 while [ $i -le $# ]; do
@@ -64,32 +67,30 @@ while [ $i -le $# ]; do
         output_dir="${!i}"
     elif [ "$arg" == "--batch" ]; then
         batch_mode=true
-    elif [ "$arg" == "--video" ] && [ $i -lt $# ]; then
+    elif [ "$arg" == "--audio" ] && [ $i -lt $# ]; then
         i=$((i+1))
-        video_files+=("${!i}")
+        audio_files+=("${!i}")
     else
         other_args+=("$arg")
     fi
     i=$((i+1))
 done
 
-# Run the speech separation script
-echo -e "\n[2/2] Running speech separation..."
+# Run the audio feature extraction script
+echo -e "\n[2/2] Running audio feature extraction..."
 
 # Build command based on input parameters
 cmd_args=()
 
-# Add input directory if specified and no video files were provided
-if [ -n "$input_dir" ] && [ ${#video_files[@]} -eq 0 ]; then
+# Add input directory if specified and no audio files were provided
+if [ -n "$input_dir" ] && [ ${#audio_files[@]} -eq 0 ]; then
     echo "Using input directory: $input_dir"
     cmd_args+=("--input-dir" "$input_dir")
-fi
-
-# Add individual video files if provided
-if [ ${#video_files[@]} -gt 0 ]; then
-    echo "Processing ${#video_files[@]} individual video files"
-    for video in "${video_files[@]}"; do
-        cmd_args+=("$video")
+else
+    # Add individual audio files if provided
+    for audio in "${audio_files[@]}"; do
+        echo "Processing audio file: $audio"
+        cmd_args+=("--audio" "$audio")
     done
 fi
 
@@ -112,15 +113,15 @@ done
 # Use Poetry to run the script
 if [ ${#cmd_args[@]} -eq 0 ] && [ ${#other_args[@]} -eq 0 ]; then
     echo "Entering interactive mode..."
-    poetry run python -m src.separate_speech --interactive
+    poetry run python -m src.speech_to_text.speech_features --interactive
 else
     # Otherwise, pass all arguments to the script
-    poetry run python -m src.separate_speech "${cmd_args[@]}"
+    poetry run python -m src.speech_to_text.speech_features "${cmd_args[@]}"
 fi
 
 if [ $? -eq 0 ]; then
-    echo -e "\nSpeech separation process completed successfully."
+    echo -e "\nAudio feature extraction completed successfully."
 else
-    echo -e "\nAn error occurred during the speech separation process."
+    echo -e "\nAn error occurred during audio feature extraction."
     exit 1
 fi

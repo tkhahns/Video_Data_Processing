@@ -1,12 +1,18 @@
+#!/usr/bin/env python3
 """
-Command-line interface for emotion and pose recognition from videos.
+Command-line interface for emotion and pose recognition.
 """
+
 import os
 import sys
-import argparse
 import logging
+import argparse
 from pathlib import Path
 import getpass
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
 
 # Add parent directory to sys.path to allow imports
 parent_dir = str(Path(__file__).resolve().parent.parent.parent)
@@ -14,18 +20,6 @@ if parent_dir not in sys.path:
     sys.path.append(parent_dir)
 
 from src.emotion_and_pose_recognition import processor, utils
-
-# Set up logging
-try:
-    from utils import init_logging
-    logger = init_logging.get_logger(__name__)
-except ImportError:
-    # Fall back to standard logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
-    logger = logging.getLogger(__name__)
 
 def get_huggingface_token():
     """
@@ -73,270 +67,166 @@ def get_huggingface_token():
     return token
 
 def main():
-    """Main entry point for the emotion and pose recognition CLI."""
-    # Create argument parser
-    parser = argparse.ArgumentParser(description='Facial Emotion and Body Pose Recognition from Video. '
-                                                 'If no command is specified, runs in interactive mode.')
+    """Main CLI function for emotion and pose recognition."""
+    parser = argparse.ArgumentParser(description="Extract emotions and poses from videos")
     
-    # Add global options - these should be before the subparsers
-    parser.add_argument('--with-pose', '-p', action='store_true', help='Enable body pose estimation (default)')
-    parser.add_argument('--no-pose', action='store_true', help='Disable body pose estimation')
-    parser.add_argument('--input-dir', help='Directory containing input video files')
-    parser.add_argument('--output-dir', help='Directory to save output files')
-    parser.add_argument('--multi-speaker', '-m', action='store_true', 
-                        help='Enable multi-speaker tracking (up to 2 speakers) - default')
-    parser.add_argument('--single-speaker', action='store_true',
-                       help='Use single-speaker mode (disable multi-speaker tracking)')
-    parser.add_argument('--batch', action='store_true', 
-                       help='Process all files without manual selection')
+    # Input/output arguments - allow both input-dir and direct video input
+    input_group = parser.add_mutually_exclusive_group(required=True)
+    input_group.add_argument("--input-dir", "-i", help="Input directory with videos")
+    input_group.add_argument("--video", "-v", help="Single video file to process")
     
-    # Create subparsers for different commands
-    subparsers = parser.add_subparsers(dest='command', help='Command to run')
+    parser.add_argument("--output-dir", "-o", help="Output directory for processed videos")
+    parser.add_argument("--batch", "-b", action="store_true", help="Process all videos without prompting")
+    parser.add_argument("--log-dir", "-l", help="Directory to save log files")
     
-    # 1. Single video processing command
-    single_parser = subparsers.add_parser('process', help='Process a single video file')
-    single_parser.add_argument('input', help='Path to input video file')
-    single_parser.add_argument('--output', '-o', help='Path to save annotated video', default=None)
-    single_parser.add_argument('--log', '-l', help='Path to save emotions log (CSV)', default=None)
-    single_parser.add_argument('--show', '-s', action='store_true', help='Show video preview')
-    single_parser.add_argument('--skip', '-k', type=int, default=0, 
-                               help='Number of frames to skip between processing (0=process all)')
-    single_parser.add_argument('--backend', '-b', default='opencv',
-                               help='Face detection backend (opencv, ssd, mtcnn, etc.)')
-    single_parser.add_argument('--log-only', action='store_true', 
-                               help='Only generate log, skip video output for faster processing')
-    single_parser.add_argument('--pose-log', help='Path to save pose data (JSON)', default=None)
-    single_parser.add_argument('--multi-speaker', '-m', action='store_true', 
-                              help='Enable multi-speaker tracking (up to 2 speakers) - default')
-    single_parser.add_argument('--single-speaker', action='store_true',
-                             help='Use single-speaker mode (disable multi-speaker tracking)')
+    # Audio sources for multimodal analysis
+    parser.add_argument("--audio-path", help="Path to audio file for multimodal analysis")
+    parser.add_argument("--speech-dir", help="Directory containing separated speech audio files")
     
-    # 2. Batch processing command
-    batch_parser = subparsers.add_parser('batch', help='Process multiple videos in a directory')
-    batch_parser.add_argument('input_dir', help='Input directory containing videos')
-    batch_parser.add_argument('output_dir', help='Output directory for annotated videos')
-    batch_parser.add_argument('--log_dir', '-l', help='Directory to save emotion logs', default=None)
-    batch_parser.add_argument('--extension', '-e', default='mp4', help='Video file extension to process')
-    batch_parser.add_argument('--interactive', '-i', action='store_true', 
-                              help='Enable interactive file selection')
-    batch_parser.add_argument('--recursive', '-r', action='store_true',
-                              help='Search for video files recursively in subdirectories')
-    batch_parser.add_argument('--with-pose', '-p', action='store_true',
-                              help='Also perform body pose estimation')
-    batch_parser.add_argument('--batch', action='store_true',
-                              help='Process all files without manual selection')
+    # Processing options
+    parser.add_argument("--with-pose", action="store_true", help="Enable pose estimation")
+    parser.add_argument("--no-pose", action="store_true", help="Disable pose estimation")
+    parser.add_argument("--multi-speaker", action="store_true", help="Enable multi-speaker tracking")
+    parser.add_argument("--single-speaker", action="store_true", help="Disable multi-speaker tracking (only track one person)")
+    parser.add_argument("--interactive", action="store_true", help="Enable interactive mode for file selection")
+    parser.add_argument("--skip-frames", type=int, default=0, help="Skip N frames between processing")
     
-    # 3. Check dependencies command
-    check_parser = subparsers.add_parser('check', help='Check if all dependencies are installed')
+    # Feature extraction
+    parser.add_argument("--extract-features", "-e", action="store_true", help="Extract advanced video features")
+    parser.add_argument("--feature-models", nargs="+", 
+                       choices=["pare", "vitpose", "psa", "rsn", "au_detector", "dan", "eln", 
+                                "mediapipe", "pyfeat", "optical_flow", "av_hubert", "meld", "all"],
+                       default=["all"],  # Default to all models
+                       help="Models to use for feature extraction")
     
-    # 4. Interactive command
-    interactive_parser = subparsers.add_parser('interactive', help='Interactive mode to select files to process')
-    interactive_parser.add_argument('--input_dir', '-i', default='data/videos', 
-                                    help='Input directory containing videos (default: data/videos)')
-    interactive_parser.add_argument('--recursive', '-r', action='store_true',
-                                   help='Search for video files recursively in subdirectories')
-    interactive_parser.add_argument('--output_dir', '-o', default='output/emotions_and_pose',
-                                   help='Output directory for processed videos (default: output/emotions_and_pose)')
-    interactive_parser.add_argument('--with-pose', '-p', action='store_true',
-                                    help='Also perform body pose estimation')
-    interactive_parser.add_argument('--batch', action='store_true',
-                                    help='Process all files without manual selection')
-
-    # Parse arguments
+    # Debug options
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
+    
     args = parser.parse_args()
     
-    # Get Hugging Face token before proceeding
-    huggingface_token = get_huggingface_token()
-    os.environ["HUGGINGFACE_TOKEN"] = huggingface_token if huggingface_token else ""
+    # Set debug logging if requested
+    if args.debug:
+        logging.getLogger().setLevel(logging.DEBUG)
     
-    # Make interactive mode the default if no command is specified
-    if args.command is None:
-        logger.info("No command specified. Running in interactive mode.")
-        # Create default arguments for interactive mode
-        args.command = 'interactive'
-        args.input_dir = args.input_dir or 'data/videos'  # Use provided input-dir or default
-        args.recursive = False
-        args.output_dir = args.output_dir or 'output/emotions'  # Use provided output-dir or default
-
-    # Set body pose estimation as default, unless --no-pose is specified
-    if not hasattr(args, 'with_pose'):
-        args.with_pose = True
-    if hasattr(args, 'no_pose') and args.no_pose:
-        args.with_pose = False
-        
-    # Enable multi-speaker tracking by default, unless --single-speaker is specified
-    if not hasattr(args, 'multi_speaker'):
-        args.multi_speaker = True  # Default to multi-speaker support
-    if hasattr(args, 'single_speaker') and args.single_speaker:
-        args.multi_speaker = False
-
-    # Handle batch mode
-    if hasattr(args, 'batch') and args.batch:
-        logger.info("Batch mode enabled - processing all files without manual selection")
+    # Import here to avoid circular imports
+    from .processor import process_video, batch_process_videos
     
-    # Check the command and run the corresponding function
-    if args.command == 'process':
-        # Check dependencies before processing
-        if not utils.check_dependencies():
-            logger.error("Dependency check failed. Install required packages and try again.")
-            return 1
-            
-        logger.info(f"Processing video: {args.input}")
-        logger.info(f"Body pose estimation: {'enabled' if args.with_pose else 'disabled'}")
-        logger.info(f"Multi-speaker tracking: {'enabled' if args.multi_speaker else 'disabled'}")
+    # Normalize feature models
+    feature_models = args.feature_models
+    if "all" in feature_models or len(feature_models) == 0:
+        feature_models = ["pare", "vitpose", "psa", "rsn", "au_detector", 
+                         "dan", "eln", "mediapipe", "pyfeat", "optical_flow",
+                         "av_hubert", "meld"]
+    
+    # Set default output directory if not provided
+    if not args.output_dir:
+        if args.input_dir:
+            args.output_dir = os.path.join(args.input_dir, "emotions_output")
+        else:
+            video_dir = os.path.dirname(args.video)
+            args.output_dir = os.path.join(video_dir, "emotions_output")
+        logger.info(f"No output directory specified, using {args.output_dir}")
+    
+    # Set default log directory if not provided
+    if not args.log_dir:
+        args.log_dir = args.output_dir
+    
+    # Create video features directory 
+    video_features_dir = os.path.join(args.log_dir, "video_features")
+    os.makedirs(video_features_dir, exist_ok=True)
+    
+    # Process based on input type
+    if args.video:
+        # Single video processing
+        input_path = args.video
+        video_name = os.path.basename(input_path)
+        base_name = os.path.splitext(video_name)[0]
         
-        # Process the video
-        success = processor.process_video(
-            args.input,
-            args.output,
-            args.log,
-            show_preview=args.show,
-            skip_frames=args.skip,
-            backend=args.backend,
-            log_only=getattr(args, 'log_only', False),
-            with_pose=args.with_pose,
-            pose_log_path=getattr(args, 'pose_log', None)
+        output_path = os.path.join(args.output_dir, f"{base_name}_emotions_and_pose.mp4")
+        log_path = os.path.join(args.log_dir, f"{base_name}_emotions.csv") 
+        pose_log_path = os.path.join(args.log_dir, f"{base_name}_pose.json") if args.with_pose and not args.no_pose else None
+        
+        # Set up video features path
+        video_features_path = os.path.join(video_features_dir, f"{base_name}_video_features")
+        
+        # Try to find corresponding audio file if multimodal models are requested
+        audio_path = args.audio_path
+        
+        if not audio_path and args.speech_dir:
+            # Try to find audio file in specified speech directory
+            speech_file = os.path.join(args.speech_dir, f"{base_name}.wav")
+            if os.path.exists(speech_file):
+                audio_path = speech_file
+                logger.info(f"Found matching audio file in speech directory: {audio_path}")
+                
+        if not audio_path and any(m in feature_models for m in ["av_hubert", "meld"]):
+            # Look for audio files with the same base name in common locations
+            potential_paths = [
+                os.path.join(args.log_dir, "..", "speech", f"{base_name}.wav"),
+                os.path.join(args.log_dir, "..", "separated_speech", f"{base_name}.wav"),
+                os.path.join(os.path.dirname(args.video), "..", "speech", f"{base_name}.wav")
+            ]
+            for path in potential_paths:
+                if os.path.exists(path):
+                    audio_path = path
+                    logger.info(f"Found audio file for multimodal analysis: {audio_path}")
+                    break
+                    
+            if not audio_path:
+                logger.warning("No audio file found for multimodal analysis. Some features may be incomplete.")
+        
+        logger.info(f"Processing single video: {video_name}...")
+        success = process_video(
+            input_path, 
+            output_path, 
+            log_path,
+            backend="opencv",
+            with_pose=args.with_pose and not args.no_pose,
+            pose_log_path=pose_log_path,
+            extract_features=args.extract_features,
+            video_features_path=video_features_path,
+            video_feature_models=feature_models,
+            audio_path=audio_path
         )
+        
+        if success:
+            logger.info(f"Successfully processed {video_name}")
+            logger.info(f"Video features saved to: {video_features_path}_aggregate.csv")
+            logger.info(f"Full features saved to: {video_features_path}_full.json")
+        else:
+            logger.error(f"Failed to process {video_name}")
         
         return 0 if success else 1
         
-    elif args.command == 'batch':
-        # Check dependencies before processing
-        if not utils.check_dependencies():
-            logger.error("Dependency check failed. Install required packages and try again.")
-            return 1
-            
-        logger.info(f"Batch processing videos from: {args.input_dir}")
-        
-        # Handle interactive mode for batch processing
-        if args.interactive:
-            # Find video files
-            video_files = utils.find_video_files([args.input_dir], args.recursive)
-            
-            if not video_files:
-                logger.error(f"No video files found in {args.input_dir}")
-                return 1
-                
-            logger.info(f"Found {len(video_files)} video file(s). Select which ones to process:")
-            selected_files, log_only = utils.select_files_from_list(video_files)
-            
-            if not selected_files:
-                logger.info("No files selected. Exiting.")
-                return 0
-                
-            # Process selected files
-            results = {}
-            for video_file in selected_files:
-                video_name = os.path.basename(video_file)
-                base_name = os.path.splitext(video_name)[0]
-                
-                output_path = os.path.join(args.output_dir, f"{base_name}_emotions_and_pose.mp4")
-                log_path = os.path.join(args.log_dir, f"{base_name}_emotions.csv") if args.log_dir else None
-                pose_log_path = os.path.join(args.log_dir, f"{base_name}_pose.json") if args.with_pose else None
-                
-                logger.info(f"Processing {video_name}...")
-                success = processor.process_video(
-                    video_file, output_path, log_path, 
-                    log_only=log_only,
-                    with_pose=args.with_pose,
-                    pose_log_path=pose_log_path
-                )
-                results[video_name] = success
-                
-                # Clean memory after each video
-                utils.clean_memory()
-        else:
-            # Regular batch processing
-            results = processor.batch_process_videos(
-                args.input_dir,
-                args.output_dir,
-                args.log_dir,
-                args.extension,
-                with_pose=args.with_pose
-            )
-        
-        # Print summary
-        total = len(results)
-        successful = sum(1 for success in results.values() if success)
-        logger.info(f"Batch processing complete: {successful}/{total} videos processed successfully")
-        
-        return 0 if successful == total else 1
-    
-    elif args.command == 'interactive':
-        # Check dependencies before processing
-        if not utils.check_dependencies():
-            logger.error("Dependency check failed. Install required packages and try again.")
-            return 1
-        
-        # Create input and output directories if they don't exist
-        os.makedirs(args.input_dir, exist_ok=True)
-        os.makedirs(args.output_dir, exist_ok=True)
-        
-        # Find video files
-        video_files = utils.find_video_files([args.input_dir], args.recursive)
-        
-        if not video_files:
-            logger.error(f"No video files found in {args.input_dir}")
-            return 1
-            
-        # Check if batch mode is enabled
-        batch_mode = getattr(args, 'batch', False)
-        if batch_mode:
-            logger.info(f"Batch mode enabled: Processing all {len(video_files)} files without manual selection")
-            
-        # Use the batch_mode flag when calling select_files_from_list 
-        logger.info(f"Found {len(video_files)} video file(s). Select which ones to process:")
-        selected_files, log_only = utils.select_files_from_list(video_files, batch_mode)
-        
-        if not selected_files:
-            logger.info("No files selected. Exiting.")
-            return 0
-            
-        # Process selected files
-        results = {}
-        for video_file in selected_files:
-            video_name = os.path.basename(video_file)
-            base_name = os.path.splitext(video_name)[0]
-            
-            output_path = os.path.join(args.output_dir, f"{base_name}_emotions_and_pose.mp4")
-            log_path = os.path.join(args.output_dir, f"{base_name}_emotions.csv")
-            pose_log_path = os.path.join(args.output_dir, f"{base_name}_pose.json") if args.with_pose else None
-            
-            logger.info(f"Processing {video_name}...")
-            success = processor.process_video(
-                video_file, output_path, log_path, 
-                log_only=log_only,
-                with_pose=args.with_pose,
-                pose_log_path=pose_log_path
-            )
-            results[video_name] = success
-            
-            # Clean memory after each video
-            utils.clean_memory()
-            
-        # Print summary
-        total = len(results)
-        successful = sum(1 for success in results.values() if success)
-        logger.info(f"Interactive processing complete: {successful}/{total} videos processed successfully")
-        
-        return 0 if successful == total else 1
-        
-    elif args.command == 'check':
-        # Check dependencies
-        if utils.check_dependencies():
-            logger.info("All dependencies are installed and ready to use")
-            
-            # Check available backends
-            backends = utils.get_available_backends()
-            logger.info(f"Available face detection backends: {', '.join(backends)}")
-            
-            return 0
-        else:
-            return 1
-            
     else:
-        parser.print_help()
-        return 1
+        # Directory processing - prepare speech directory information
+        audio_dir = args.speech_dir
+        
+        results = batch_process_videos(
+            input_dir=args.input_dir,
+            output_dir=args.output_dir,
+            log_dir=args.log_dir,
+            file_extension="mp4",
+            with_pose=args.with_pose and not args.no_pose,
+            extract_features=args.extract_features,
+            video_features_dir=video_features_dir,
+            video_feature_models=feature_models,
+            search_audio_files=True,  # Always search for audio files
+            speech_dir=audio_dir  # Pass speech directory for finding matching audio files
+        )
+        
+        # Report results
+        total = len(results)
+        successful = sum(1 for success in results.values() if success)
+        logger.info(f"Processed {successful}/{total} videos successfully")
+        
+        if successful < total:
+            logger.warning(f"Failed to process {total - successful} videos")
+            for name, success in results.items():
+                if not success:
+                    logger.warning(f"Failed to process: {name}")
+        
+        return 0 if successful == total else 1
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

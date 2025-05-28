@@ -28,6 +28,31 @@ else
     }
 fi
 
+# Install huggingface_hub CLI support
+echo "Installing Hugging Face CLI dependencies..."
+poetry run pip install --upgrade "huggingface_hub[cli]" > /dev/null || echo "Warning: Could not install huggingface_hub CLI"
+
+# Check for Hugging Face token - prioritize environment variable
+if [ -n "$HUGGINGFACE_TOKEN" ]; then
+    echo "Using Hugging Face token from environment."
+    
+    # Ensure the token is properly configured for huggingface-hub
+    poetry run python -c "from huggingface_hub import HfFolder; HfFolder.save_token('$HUGGINGFACE_TOKEN')" || \
+        echo "Warning: Failed to save Hugging Face token to hub folder"
+else
+    # ONLY if not running in a subprocess (check for interactive terminal)
+    if [ -t 0 ]; then
+        echo "No Hugging Face token found in environment. Attempting login..."
+        if ! poetry run huggingface-cli login; then
+            echo "Hugging Face login failed or was canceled."
+            echo "Speaker diarization might not work correctly."
+        fi
+    else
+        echo "Running in non-interactive mode without Hugging Face token."
+        echo "Speaker diarization might not work correctly."
+    fi
+fi
+
 # Help message if --help flag is provided
 if [ "$1" == "--help" ] || [ "$1" == "-h" ]; then
     echo -e "\nUsage: ./run_speech_to_text.sh [options] <audio_file(s)>"
