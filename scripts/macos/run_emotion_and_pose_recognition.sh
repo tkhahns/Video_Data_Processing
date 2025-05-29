@@ -81,6 +81,7 @@ fi
 input_dir=""
 output_dir=""
 batch_mode=false
+files_from=""
 other_args=()
 i=1
 while [ $i -le $# ]; do
@@ -93,6 +94,9 @@ while [ $i -le $# ]; do
         output_dir="${!i}"
     elif [ "$arg" == "--batch" ]; then
         batch_mode=true
+    elif [ "$arg" == "--files-from" ] && [ $i -lt $# ]; then
+        i=$((i+1))
+        files_from="${!i}"
     else
         other_args+=("$arg")
     fi
@@ -114,6 +118,16 @@ fi
 # Add output directory if specified
 if [ -n "$output_dir" ]; then
     cmd_args+=("--output-dir" "$output_dir")
+fi
+
+# Add files list if provided
+if [ -n "$files_from" ] && [ -f "$files_from" ]; then
+    echo "Using selected files from: $files_from"
+    files_arg=""
+    while IFS= read -r file; do
+        files_arg+="\"$file\" "
+    done < "$files_from"
+    cmd_args+=($files_arg)
 fi
 
 # Always add pose estimation by default (unless --no-pose is explicitly included)
@@ -160,6 +174,12 @@ if [ ${#cmd_args[@]} -eq 0 ] && [ ${#other_args[@]} -eq 0 ]; then
 else
     # Otherwise, pass all arguments to the script
     poetry run python -m src.emotion_and_pose_recognition.cli "${cmd_args[@]}"
+fi
+
+# Pass any remaining arguments directly to the Python module
+# This allows passing video files directly from run_all.sh
+if [ ${#other_args[@]} -gt 0 ]; then
+    cmd_args+=("${other_args[@]}")
 fi
 
 if [ $? -eq 0 ]; then

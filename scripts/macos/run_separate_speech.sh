@@ -51,6 +51,7 @@ fi
 input_dir=""
 output_dir=""
 batch_mode=false
+files_from=""
 other_args=()
 i=1
 while [ $i -le $# ]; do
@@ -63,6 +64,9 @@ while [ $i -le $# ]; do
         output_dir="${!i}"
     elif [ "$arg" == "--batch" ]; then
         batch_mode=true
+    elif [ "$arg" == "--files-from" ] && [ $i -lt $# ]; then
+        i=$((i+1))
+        files_from="${!i}"
     else
         other_args+=("$arg")
     fi
@@ -90,6 +94,12 @@ fi
 if [ "$batch_mode" = true ]; then
     echo "Running in batch mode - processing all files without manual selection"
     cmd_args+=("--batch")
+fi
+
+# Add files list if provided
+if [ -n "$files_from" ] && [ -f "$files_from" ]; then
+    echo "Using selected files from: $files_from"
+    cmd_args+=("--files-from" "$files_from")
 fi
 
 # Add other arguments

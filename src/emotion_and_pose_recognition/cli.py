@@ -141,6 +141,7 @@ def main():
                                     help='Also perform body pose estimation')
     interactive_parser.add_argument('--batch', action='store_true',
                                     help='Process all files without manual selection')
+    interactive_parser.add_argument('files', nargs='*', help='Specific video files to process')
 
     # Parse arguments
     args = parser.parse_args()
@@ -272,25 +273,40 @@ def main():
         os.makedirs(args.input_dir, exist_ok=True)
         os.makedirs(args.output_dir, exist_ok=True)
         
-        # Find video files
-        video_files = utils.find_video_files([args.input_dir], args.recursive)
-        
-        if not video_files:
-            logger.error(f"No video files found in {args.input_dir}")
-            return 1
+        # If specific files were provided, use those directly
+        if hasattr(args, 'files') and args.files:
+            video_files = [Path(file) for file in args.files if os.path.exists(file)]
+            if video_files:
+                logger.info(f"Using {len(video_files)} specified video files")
+            else:
+                logger.error("None of the specified video files exist")
+                return 1
+        else:
+            # Find video files
+            video_files = utils.find_video_files([args.input_dir], args.recursive)
             
+            if not video_files:
+                logger.error(f"No video files found in {args.input_dir}")
+                return 1
+        
         # Check if batch mode is enabled
         batch_mode = getattr(args, 'batch', False)
         if batch_mode:
             logger.info(f"Batch mode enabled: Processing all {len(video_files)} files without manual selection")
             
-        # Use the batch_mode flag when calling select_files_from_list 
-        logger.info(f"Found {len(video_files)} video file(s). Select which ones to process:")
-        selected_files, log_only = utils.select_files_from_list(video_files, batch_mode)
-        
-        if not selected_files:
-            logger.info("No files selected. Exiting.")
-            return 0
+        # Unless specific files were provided, use the interactive selection
+        if not (hasattr(args, 'files') and args.files):
+            # Use the batch_mode flag when calling select_files_from_list 
+            logger.info(f"Found {len(video_files)} video file(s). Select which ones to process:")
+            selected_files, log_only = utils.select_files_from_list(video_files, batch_mode)
+            
+            if not selected_files:
+                logger.info("No files selected. Exiting.")
+                return 0
+        else:
+            # Use the provided files directly
+            selected_files = video_files
+            log_only = False
             
         # Process selected files
         results = {}

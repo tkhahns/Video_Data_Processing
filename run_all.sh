@@ -112,22 +112,57 @@ if command -v poetry &>/dev/null; then
         exit 1
     fi
     
-    echo -e "\n${VIDEO_COUNT} videos found in the data directory:"
-    find "$VIDEOS_DIR" -type f \( -name "*.mp4" -o -name "*.avi" -o -name "*.mov" -o -name "*.mkv" -o -name "*.MP4" -o -name "*.MOV" -o -name "*.AVI" -o -name "*.MKV" \) -exec basename {} \;
+    # Find all video files and store their paths
+    VIDEO_FILES=($(find "$VIDEOS_DIR" -type f \( -name "*.mp4" -o -name "*.avi" -o -name "*.mov" -o -name "*.mkv" -o -name "*.MP4" -o -name "*.MOV" -o -name "*.AVI" -o -name "*.MKV" \)))
     
-    # Ask user if they want to process all videos or select manually
+    echo -e "\n${VIDEO_COUNT} videos found in the data directory:"
+    for ((i=0; i<${#VIDEO_FILES[@]}; i++)); do
+        echo "[$((i+1))] $(basename "${VIDEO_FILES[$i]}")"
+    done
+    
+    # Ask user if they want to process all videos or select specific ones
     echo -e "\nHow would you like to process the videos?"
     echo "1. Process all videos automatically"
     echo "2. Select specific videos to process at each step"
     
     PROCESS_ALL=false
+    SELECTED_VIDEOS=()
     read -p "Enter your choice (1 or 2): " choice
     if [ "$choice" == "1" ]; then
         PROCESS_ALL=true
+        SELECTED_VIDEOS=("${VIDEO_FILES[@]}")
         echo "Processing all videos automatically."
     else
-        echo "You will be prompted to select videos at each step."
+        echo "Select videos to process (comma-separated numbers, e.g., 1,3,5):"
+        read -p "Your selection: " selection
+        
+        # Parse the selection
+        IFS=',' read -ra INDICES <<< "$selection"
+        for index in "${INDICES[@]}"; do
+            # Convert to 0-based index and check bounds
+            idx=$((index-1))
+            if [ "$idx" -ge 0 ] && [ "$idx" -lt "${#VIDEO_FILES[@]}" ]; then
+                SELECTED_VIDEOS+=("${VIDEO_FILES[$idx]}")
+                echo "Selected: $(basename "${VIDEO_FILES[$idx]}")"
+            else
+                echo "Warning: Invalid selection $index, skipping"
+            fi
+        done
+        
+        # Check if any videos were selected
+        if [ ${#SELECTED_VIDEOS[@]} -eq 0 ]; then
+            echo "No valid videos selected. Pipeline halted."
+            exit 1
+        fi
+        
+        echo "You will process ${#SELECTED_VIDEOS[@]} selected videos."
     fi
+    
+    # Create a temporary file with the selected video paths for modules to use
+    SELECTED_FILES_LIST=$(mktemp)
+    for file in "${SELECTED_VIDEOS[@]}"; do
+        echo "$file" >> "$SELECTED_FILES_LIST"
+    done
     
     # Set batch flag based on user choice
     BATCH_FLAG=""
@@ -141,7 +176,19 @@ if command -v poetry &>/dev/null; then
     # Start emotion and pose recognition in parallel (background)
     echo -e "\n[3/5] Running emotion and pose recognition in parallel..."
     (
-        poetry run scripts/macos/run_emotion_and_pose_recognition.sh --input-dir "$VIDEOS_DIR" --output-dir "$EMOTIONS_AND_POSE_DIR" $BATCH_FLAG
+        # Pass individual files directly to emotion recognition script
+        if [ ${#SELECTED_VIDEOS[@]} -gt 0 ]; then
+            if [ "$PROCESS_ALL" = true ]; then
+                # In batch mode, just pass the directory
+                poetry run scripts/macos/run_emotion_and_pose_recognition.sh --input-dir "$VIDEOS_DIR" --output-dir "$EMOTIONS_AND_POSE_DIR" $BATCH_FLAG
+            else
+                # For selected videos, pass them directly as arguments
+                poetry run python -m src.emotion_and_pose_recognition.cli interactive --input_dir "$VIDEOS_DIR" --output_dir "$EMOTIONS_AND_POSE_DIR" --with-pose "${SELECTED_VIDEOS[@]}"
+            fi
+        else
+            poetry run scripts/macos/run_emotion_and_pose_recognition.sh --input-dir "$VIDEOS_DIR" --output-dir "$EMOTIONS_AND_POSE_DIR"
+        fi
+        
         EMOTION_EXIT=$?
         echo "EMOTION_EXIT=$EMOTION_EXIT" >> "$SEMAPHORE_FILE"
         echo -e "\nEmotion and pose recognition completed with exit code $EMOTION_EXIT"
@@ -150,31 +197,21 @@ if command -v poetry &>/dev/null; then
     
     # Run speech processing pipeline sequentially
     echo -e "\n[4/5] Running speech separation..."
-    poetry run scripts/macos/run_separate_speech.sh --input-dir "$VIDEOS_DIR" --output-dir "$SPEECH_OUTPUT_DIR" $BATCH_FLAG
+    if [ ${#SELECTED_VIDEOS[@]} -gt 0 ]; then
+        if [ "$PROCESS_ALL" = true ]; then
+            # In batch mode, just pass the directory
+            poetry run scripts/macos/run_separate_speech.sh --input-dir "$VIDEOS_DIR" --output-dir "$SPEECH_OUTPUT_DIR" $BATCH_FLAG
+        else
+            # For selected videos, pass specific files
+            poetry run python -m src.separate_speech --output-dir "$SPEECH_OUTPUT_DIR" "${SELECTED_VIDEOS[@]}"
+        fi
+    else
+        poetry run scripts/macos/run_separate_speech.sh --input-dir "$VIDEOS_DIR" --output-dir "$SPEECH_OUTPUT_DIR"
+    fi
     SPEECH_EXIT=$?
     
-    # Only proceed with transcription if speech separation was successful
-    if [ $SPEECH_EXIT -eq 0 ]; then
-        echo -e "\n[5/5] Running speech-to-text on separated audio..."
-        poetry run scripts/macos/run_speech_to_text.sh --input-dir "$SPEECH_OUTPUT_DIR" --output-dir "$TRANSCRIPT_OUTPUT_DIR" --diarize $BATCH_FLAG
-        TRANSCRIPT_EXIT=$?
-    else
-        echo -e "\nSpeech separation failed with exit code $SPEECH_EXIT"
-        TRANSCRIPT_EXIT=1  # Set failure code for transcript since we couldn't process it
-    fi
-    
-    # Wait for emotion recognition to complete
-    echo "Waiting for emotion and pose recognition to complete..."
-    wait $EMOTION_PID
-    
-    # Read the exit status of the emotion recognition process
-    if [ -f "$SEMAPHORE_FILE" ]; then
-        source "$SEMAPHORE_FILE"
-        rm -f "$SEMAPHORE_FILE"
-    else
-        # If semaphore file doesn't exist, assume failure
-        EMOTION_EXIT=1
-    fi
+    # Clean up temporary files
+    rm -f "$SELECTED_FILES_LIST"
     
     # Report the final status of all pipeline steps
     echo -e "\n===== Pipeline Execution Summary ====="

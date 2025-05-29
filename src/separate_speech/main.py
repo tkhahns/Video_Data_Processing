@@ -116,6 +116,10 @@ def main():
         action="store_true",
         help="Process all files without manual selection"
     )
+    parser.add_argument(
+        "--files-from",
+        help="Read file paths from a file, one per line"
+    )
     
     args = parser.parse_args()
     
@@ -167,6 +171,21 @@ def main():
         else:
             logger.error(f"Input directory not found: {args.input_dir}")
             return 1
+    
+    # Handle files from list if provided
+    if args.files_from and os.path.isfile(args.files_from):
+        try:
+            with open(args.files_from, 'r') as f:
+                file_paths = [line.strip() for line in f if line.strip()]
+                # Filter to ensure files exist
+                existing_files = [path for path in file_paths if os.path.exists(path)]
+                if existing_files:
+                    logger.info(f"Found {len(existing_files)} video files from provided list")
+                    input_args = existing_files
+                else:
+                    logger.warning(f"No valid files found in {args.files_from}")
+        except Exception as e:
+            logger.error(f"Error reading file list: {e}")
     
     # Find all available video files
     all_video_files = extraction.find_video_files(
