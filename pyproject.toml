@@ -16,6 +16,7 @@ wheel = ">=0.38.0"
 gitpython = ">=3.1.30"  # For downloading models
 tqdm = ">=4.66.0"       # For progress bars, used by multiple modules
 psutil = ">=5.9.0"      # For system monitoring, memory usage tracking
+numpy = "<2.0.0"        # Pin to NumPy 1.x for compatibility
 
 # Group common dependencies without numpy conflicts
 torch = ">=2.7.0"
@@ -29,7 +30,7 @@ ffmpeg-python = ">=0.2.0"
 
 # Emotion and pose recognition dependencies
 [tool.poetry.group.emotion.dependencies]
-numpy = ">=1.26.0"
+numpy = "<2.0.0"        # Pin to NumPy 1.x for compatibility
 tensorflow = ">=2.13.0"
 tf-keras = "*"
 deepface = ">=0.0.79"
@@ -45,7 +46,7 @@ py-feat = ">=0.4.0"  # Python Facial Expression Analysis Toolbox
 optional = true
 
 [tool.poetry.group.speech.dependencies]
-numpy = ">=2.0.2"  # Required by newer speech libraries
+numpy = "<2.0.0"        # Pin to NumPy 1.x for compatibility
 torchaudio = ">=2.0.0"
 speechbrain = ">=0.5.15" 
 torch = ">=2.0.0"
@@ -71,6 +72,7 @@ webdriver-manager = ">=3.8.6"  # Added for automatic ChromeDriver management
 optional = true
 
 [tool.poetry.group.text.dependencies]
+numpy = "<2.0.0"        # Pin to NumPy 1.x for compatibility
 sentence-transformers = ">=2.2.2"  # Sentence-BERT
 transformers = ">=4.33.0"  # For BERT variants (ALBERT, DeBERTA)
 tensorflow-hub = ">=0.13.0"  # For Universal Sentence Encoder
