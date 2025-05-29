@@ -130,7 +130,7 @@ def get_available_backends():
         logger.error(f"Error getting available backends: {e}")
         return ["opencv", "ssd", "mtcnn", "retinaface", "mediapipe"]
 
-def find_video_files(paths=None, recursive=False):
+def find_video_files(paths=None, recursive=True):
     """
     Find all video files in the given paths.
     
@@ -147,11 +147,11 @@ def find_video_files(paths=None, recursive=False):
     supported_formats = ['.mp4', '.avi', '.mov', '.mkv', '.webm']
     video_files = []
     
-    # If no paths provided, use default video directory
+    # If no paths provided, use data directory
     if not paths:
-        paths = ['data/videos']
+        paths = ['data']
         # Create the default directory if it doesn't exist
-        os.makedirs('data/videos', exist_ok=True)
+        os.makedirs('data', exist_ok=True)
     
     # Convert to list if a single path is provided
     if isinstance(paths, (str, Path)):

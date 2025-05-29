@@ -87,7 +87,6 @@ poetry install
 poetry install --with common
 poetry install --with speech
 poetry install --with emotion
-poetry install --with download
 ```
 
 ### 3. Set up execution permissions
@@ -95,11 +94,28 @@ poetry install --with download
 ```bash
 # Make all scripts executable
 chmod +x run_all.sh
-chmod +x scripts/macos/run_download_videos.sh
 chmod +x scripts/macos/run_separate_speech.sh
 chmod +x scripts/macos/run_speech_to_text.sh
 chmod +x scripts/macos/run_emotion_and_pose_recognition.sh
 ```
+
+### 4. Place your videos in the data folder
+
+The system automatically searches for videos in the `data/` directory:
+
+```bash
+# Create the data directory if it doesn't exist
+mkdir -p data
+
+# Copy your video files to the data directory
+cp /path/to/your/videos/*.mp4 data/
+
+# You can also organize videos in subdirectories
+mkdir -p data/project1
+cp /path/to/project1/videos/*.mp4 data/project1/
+```
+
+**Note**: The system recursively searches through all subdirectories in the `data/` folder for video files.
 
 ---
 
@@ -107,7 +123,7 @@ chmod +x scripts/macos/run_emotion_and_pose_recognition.sh
 
 The `run_all.sh` script provides a complete end-to-end pipeline that:
 1. Prompts for your Hugging Face token (one-time, not saved)
-2. Downloads videos from SharePoint
+2. Finds all videos in the data/ folder (searching recursively)
 3. Runs emotion and pose recognition in parallel with speech processing for better performance
 4. Extracts speech from the videos
 5. Transcribes the speech to text
@@ -118,17 +134,14 @@ All outputs are organized in timestamped directories for easy tracking.
 ### Running the Complete Pipeline
 
 ```bash
-# Run the pipeline (will prompt for Hugging Face token and SharePoint URL)
+# Run the pipeline (will prompt for Hugging Face token)
 ./run_all.sh
-
-# Or specify the SharePoint URL directly
-./run_all.sh --url "https://your-sharepoint-site.com/folder-with-videos"
 ```
 
 ### Pipeline Outputs
 
 The pipeline creates the following directory structure:
-- `data/downloads_TIMESTAMP/`: Original downloaded videos
+- `data/`: Source videos (organized however you prefer)
 - `output/pipeline_results_TIMESTAMP/`: Processing results
   - `speech/`: Extracted speech audio files
   - `transcripts/`: Text transcription files
@@ -140,39 +153,24 @@ The pipeline creates the following directory structure:
 
 Each component can also be run separately if you need to process only specific steps.
 
-### 1. Download Videos from SharePoint
-
-```bash
-# Run with Poetry (interactive mode)
-poetry run scripts/macos/run_download_videos.sh
-
-# Specify URL directly
-poetry run scripts/macos/run_download_videos.sh --url "https://your-sharepoint-site.com/folder-with-videos"
-
-# Additional options
-poetry run scripts/macos/run_download_videos.sh --url "URL" --output-dir "./my-videos"
-poetry run scripts/macos/run_download_videos.sh --list-only
-poetry run scripts/macos/run_download_videos.sh --debug
-```
-
-### 2. Extract Speech from Videos
+### 1. Extract Speech from Videos
 
 ```bash
 # Interactive mode
 poetry run scripts/macos/run_separate_speech.sh
 
 # With specific input and output directories
-poetry run scripts/macos/run_separate_speech.sh --input-dir "./my-videos" --output-dir "./my-speech"
+poetry run scripts/macos/run_separate_speech.sh --input-dir "./data" --output-dir "./my-speech"
 
 # Batch mode (process all files without manual selection)
-poetry run scripts/macos/run_separate_speech.sh --input-dir "./my-videos" --output-dir "./my-speech" --batch
+poetry run scripts/macos/run_separate_speech.sh --input-dir "./data" --output-dir "./my-speech" --batch
 
 # Additional options
 poetry run scripts/macos/run_separate_speech.sh --file-type wav  # Output format: wav, mp3, or both
 poetry run scripts/macos/run_separate_speech.sh --model sepformer  # Separation model
 ```
 
-### 3. Transcribe Speech to Text
+### 2. Transcribe Speech to Text
 
 ```bash
 # Interactive mode
@@ -188,17 +186,17 @@ poetry run scripts/macos/run_speech_to_text.sh --input-dir "./my-speech" --outpu
 poetry run scripts/macos/run_speech_to_text.sh --input-dir "./my-speech" --output-dir "./my-transcripts" --diarize
 ```
 
-### 4. Analyze Emotions and Body Poses
+### 3. Analyze Emotions and Body Poses
 
 ```bash
 # Interactive mode (will prompt for Hugging Face token)
 poetry run scripts/macos/run_emotion_and_pose_recognition.sh
 
 # With specific input and output directories
-poetry run scripts/macos/run_emotion_and_pose_recognition.sh --input-dir "./my-videos" --output-dir "./my-emotions"
+poetry run scripts/macos/run_emotion_and_pose_recognition.sh --input-dir "./data" --output-dir "./my-emotions"
 
 # Batch mode
-poetry run scripts/macos/run_emotion_and_pose_recognition.sh --input-dir "./my-videos" --output-dir "./my-emotions" --batch
+poetry run scripts/macos/run_emotion_and_pose_recognition.sh --input-dir "./data" --output-dir "./my-emotions" --batch
 ```
 
 ---
@@ -211,12 +209,12 @@ For automated processing without manual file selection:
 
 ```bash
 # Run entire pipeline in batch mode
-./run_all.sh --url "YOUR_URL" --batch
+./run_all.sh --batch
 
 # Run individual components in batch mode
-poetry run scripts/macos/run_separate_speech.sh --input-dir "./my-videos" --batch
+poetry run scripts/macos/run_separate_speech.sh --input-dir "./data" --batch
 poetry run scripts/macos/run_speech_to_text.sh --input-dir "./my-speech" --batch
-poetry run scripts/macos/run_emotion_and_pose_recognition.sh --input-dir "./my-videos" --batch
+poetry run scripts/macos/run_emotion_and_pose_recognition.sh --input-dir "./data" --batch
 ```
 
 ### Running as Python Modules
@@ -224,17 +222,14 @@ poetry run scripts/macos/run_emotion_and_pose_recognition.sh --input-dir "./my-v
 Each component can be run directly as a Python module:
 
 ```bash
-# Download videos
-poetry run python -m src.download_videos --url "https://sharepoint-url.com" --output-dir "./my-videos"
-
 # Speech separation
-poetry run python -m src.separate_speech --input-dir "./my-videos" --output-dir "./my-speech"
+poetry run python -m src.separate_speech --input-dir "./data" --output-dir "./my-speech"
 
 # Speech to text
 poetry run python -m src.speech_to_text --input-dir "./my-speech" --output-dir "./my-transcripts"
 
 # Emotion and pose recognition
-poetry run python -m src.emotion_and_pose_recognition.cli --input-dir "./my-videos" --output-dir "./my-emotions" --with-pose
+poetry run python -m src.emotion_and_pose_recognition.cli --input-dir "./data" --output-dir "./my-emotions" --with-pose
 ```
 
 ### Customizing the Pipeline
@@ -266,7 +261,7 @@ If you encounter missing dependency errors:
 poetry update
 
 # Ensure all feature groups are installed
-poetry install --with common --with speech --with emotion --with download
+poetry install --with common --with speech --with emotion
 ```
 
 ### Audio Processing Issues

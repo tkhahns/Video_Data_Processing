@@ -7,6 +7,7 @@ import logging
 import torch
 import torchaudio
 from moviepy import VideoFileClip
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -56,13 +57,14 @@ def extract_audio_from_video(video_path, output_path=None, sample_rate=16000):
         logger.error(f"Error extracting audio: {e}")
         return None, None, None
 
-def find_video_files(input_paths=None, recursive=False, default_dir=None):
+def find_video_files(input_paths=None, recursive=True, default_dir=None):
     """Find video files in the specified paths or default directory."""
     video_files = []
     
-    # If no input paths provided, use default videos directory
+    # If no input paths provided, use data directory
     if not input_paths:
-        input_paths = [str(default_dir)] if default_dir else []
+        default_dir = default_dir or Path('data')
+        input_paths = [str(default_dir)]
     
     # Process each input path
     for input_path in input_paths:

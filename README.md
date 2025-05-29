@@ -74,13 +74,13 @@ Each component can be used individually:
 
 ```bash
 # Speech separation
-poetry run scripts/macos/run_separate_speech.sh --input-dir "./my-videos"
+poetry run scripts/macos/run_separate_speech.sh --input-dir "./data"
 
 # Speech-to-text
-poetry run scripts/macos/run_speech_to_text.sh --input-dir "./my-speech"
+poetry run scripts/macos/run_speech_to_text.sh --input-dir "./output/speech"
 
 # Emotion and pose recognition
-poetry run scripts/macos/run_emotion_and_pose_recognition.sh --input-dir "./my-videos"
+poetry run scripts/macos/run_emotion_and_pose_recognition.sh --input-dir "./data"
 ```
 
 ## Batch Processing
@@ -92,10 +92,20 @@ For automated processing of multiple videos:
 ./run_all.sh --batch
 
 # Run individual components in batch mode
-poetry run scripts/macos/run_separate_speech.sh --input-dir "./my-videos" --batch
-poetry run scripts/macos/run_speech_to_text.sh --input-dir "./my-speech" --batch
-poetry run scripts/macos/run_emotion_and_pose_recognition.sh --input-dir "./my-videos" --batch
+poetry run scripts/macos/run_separate_speech.sh --input-dir "./data" --batch
+poetry run scripts/macos/run_speech_to_text.sh --input-dir "./output/speech" --batch
+poetry run scripts/macos/run_emotion_and_pose_recognition.sh --input-dir "./data" --batch
 ```
+
+## Video Organization
+
+Videos should be placed in the `data/` directory. The system automatically:
+
+1. Searches recursively through all subdirectories of `data/`
+2. Processes any video files with extensions: mp4, avi, mov, mkv
+3. Maintains the same organization structure in output directories
+
+You can organize videos in subdirectories by project, date, or any other structure:
 
 ## Performance Optimization
 
