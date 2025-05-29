@@ -59,6 +59,7 @@ RESULTS_DIR="$PROJECT_ROOT/output/pipeline_results_$TIMESTAMP"
 SPEECH_OUTPUT_DIR="$RESULTS_DIR/speech"
 TRANSCRIPT_OUTPUT_DIR="$RESULTS_DIR/transcripts"
 EMOTIONS_AND_POSE_DIR="$RESULTS_DIR/emotions_and_pose"
+FEATURES_OUTPUT_DIR="$RESULTS_DIR/features"  # New directory for features
 
 echo -e "\nCreating timestamped directories:"
 echo "- Source Videos: $VIDEOS_DIR"
@@ -66,7 +67,8 @@ echo "- Pipeline results: $RESULTS_DIR"
 echo "  |- Speech: speech/"
 echo "  |- Transcripts: transcripts/"
 echo "  |- Emotions and Pose: emotions_and_pose/"
-mkdir -p "$SPEECH_OUTPUT_DIR" "$TRANSCRIPT_OUTPUT_DIR" "$EMOTIONS_AND_POSE_DIR"
+echo "  |- Features: features/"  # Add to output
+mkdir -p "$SPEECH_OUTPUT_DIR" "$TRANSCRIPT_OUTPUT_DIR" "$EMOTIONS_AND_POSE_DIR" "$FEATURES_OUTPUT_DIR"
 
 # Change to project root
 cd "$PROJECT_ROOT"
@@ -213,12 +215,39 @@ if command -v poetry &>/dev/null; then
     fi
     SPEECH_EXIT=$?
     
+    # Run feature extraction on the separated speech
+    echo -e "\n[5/6] Running feature extraction on separated speech..."
+    if [ $SPEECH_EXIT -eq 0 ]; then
+        # Only run feature extraction if speech separation was successful
+        if [ -d "$SPEECH_OUTPUT_DIR" ] && [ "$(ls -A "$SPEECH_OUTPUT_DIR")" ]; then
+            # Check if we have the feature extraction script
+            if [ -f "$PROJECT_ROOT/scripts/macos/run_feature_extraction.sh" ]; then
+                chmod +x "$PROJECT_ROOT/scripts/macos/run_feature_extraction.sh"
+                poetry run scripts/macos/run_feature_extraction.sh --input-dir "$SPEECH_OUTPUT_DIR" --output-dir "$FEATURES_OUTPUT_DIR" $BATCH_FLAG
+                FEATURE_EXIT=$?
+            else
+                echo "Feature extraction script not found at: $PROJECT_ROOT/scripts/macos/run_feature_extraction.sh"
+                echo "Running direct module import instead..."
+                # Run the feature extraction module directly
+                poetry run python -m src.output_features.main --input-dir "$SPEECH_OUTPUT_DIR" --output-dir "$FEATURES_OUTPUT_DIR" --output-csv "all_features.csv" $BATCH_FLAG
+                FEATURE_EXIT=$?
+            fi
+        else
+            echo "No audio files found in $SPEECH_OUTPUT_DIR. Skipping feature extraction."
+            FEATURE_EXIT=1
+        fi
+    else
+        echo "Speech separation failed. Skipping feature extraction."
+        FEATURE_EXIT=1
+    fi
+    
     # Clean up temporary files
     rm -f "$SELECTED_FILES_LIST"
     
     # Report the final status of all pipeline steps
     echo -e "\n===== Pipeline Execution Summary ====="
     echo "- Speech Separation: $([ $SPEECH_EXIT -eq 0 ] && echo "✅ Success" || echo "❌ Failed")"
+    echo "- Feature Extraction: $([ $FEATURE_EXIT -eq 0 ] && echo "✅ Success" || echo "❌ Failed")"
     echo "- Speech-to-Text: $([ $TRANSCRIPT_EXIT -eq 0 ] && echo "✅ Success" || echo "❌ Failed")"
     echo "- Emotion and Pose Recognition: $([ $EMOTION_EXIT -eq 0 ] && echo "✅ Success" || echo "❌ Failed")"
     
@@ -237,6 +266,7 @@ if command -v poetry &>/dev/null; then
     echo -e "\nResults and outputs:"
     echo "- Source videos: $VIDEOS_DIR"
     echo "- Separated speech: $SPEECH_OUTPUT_DIR"
+    echo "- Audio features: $FEATURES_OUTPUT_DIR"
     echo "- Transcripts: $TRANSCRIPT_OUTPUT_DIR"
     echo "- Emotion and pose analysis: $EMOTIONS_AND_POSE_DIR"
 else
