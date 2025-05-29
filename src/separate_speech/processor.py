@@ -21,7 +21,7 @@ except ImportError:
     # Fall back to standard logging
     logger = logging.getLogger(__name__)
 
-def process_file(video_path, output_dir, model_name, models_dir, chunk_size_sec=10, file_type="mp3", skip_no_speech=False, min_speech_seconds=1.0):
+def process_file(video_path, output_dir, model_name, models_dir, chunk_size_sec=10, file_type="wav", skip_no_speech=False, min_speech_seconds=1.0):
     """Process a single video file for speech separation."""
     video_filename = os.path.basename(video_path)
     video_name = os.path.splitext(video_filename)[0]

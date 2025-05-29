@@ -18,67 +18,31 @@ def load_speech_separation_model(model_name, models_dir):
     
     logger.info(f"Loading {model_name} speech separation model")
     
-    model_path = os.path.join(models_dir, model_name.lower().replace(" ", "_"))
-    
-    # If model directory doesn't exist, try downloading it
-    if not os.path.exists(model_path):
-        logger.warning(f"Model directory {model_path} not found")
-        try:
-            if model_name.lower() == "sepformer":
-                # SpeechBrain-specific loading
-                import torch
-                from speechbrain.pretrained import SepformerSeparation
-                
-                model = SepformerSeparation.from_hparams(
-                    source="speechbrain/sepformer-whamr",
-                    savedir=model_path,
-                    run_opts={"device": "cpu"}  # Force CPU to save memory
-                )
-                logger.info(f"Successfully loaded SepFormer model from speechbrain")
-                
-                # Check memory after loading
-                mem_after = get_memory_usage()
-                logger.info(f"Memory usage after loading model: {mem_after:.2f} MB (increased by {mem_after - mem_before:.2f} MB)")
-                
-                return model
-            elif model_name.lower() == "conv-tasnet":
-                # Try to load Conv-TasNet
-                import torch
-                import librosa
-                
-                # This would need the appropriate model loading code
-                logger.error(f"Loading for Conv-TasNet not implemented yet")
-                return None
-            else:
-                logger.error(f"Unknown model: {model_name}")
-                return None
-        except Exception as e:
-            logger.error(f"Error loading model: {e}")
+    try:
+        if model_name.lower() == "sepformer":
+            from speechbrain.pretrained import SepformerSeparation
+            
+            # Use SepFormer from speechbrain's pretrained models
+            model = SepformerSeparation.from_hparams(
+                source="speechbrain/sepformer-whamr",
+                run_opts={"device": "cpu"}  # Force CPU to save memory
+            )
+            
+            # Check memory after loading
+            mem_after = get_memory_usage()
+            logger.info(f"Memory usage after loading model: {mem_after:.2f} MB (increased by {mem_after - mem_before:.2f} MB)")
+            
+            return model
+        elif model_name.lower() == "conv-tasnet":
+            # Try to load Conv-TasNet
+            logger.error(f"Loading for Conv-TasNet not implemented yet")
             return None
-    else:
-        # Model exists locally, load it
-        try:
-            if model_name.lower() == "sepformer":
-                from speechbrain.pretrained import SepformerSeparation
-                
-                model = SepformerSeparation.from_hparams(
-                    source="speechbrain/sepformer-whamr",
-                    savedir=model_path,
-                    run_opts={"device": "cpu"}  # Force CPU to save memory
-                )
-                
-                # Check memory after loading
-                mem_after = get_memory_usage()
-                logger.info(f"Memory usage after loading model: {mem_after:.2f} MB (increased by {mem_after - mem_before:.2f} MB)")
-                
-                return model
-            else:
-                # Load other model types as needed
-                logger.error(f"Loading for {model_name} not implemented yet")
-                return None
-        except Exception as e:
-            logger.error(f"Error loading local model: {e}")
+        else:
+            logger.error(f"Unknown model: {model_name}")
             return None
+    except Exception as e:
+        logger.error(f"Error loading model: {e}")
+        return None
 
 def separate_speech(audio, model):
     """Separate speech from the mixed audio using the loaded model."""

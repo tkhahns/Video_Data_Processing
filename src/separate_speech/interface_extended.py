@@ -36,8 +36,8 @@ def select_videos_interactively(available_videos, batch_mode=False):
     # If in batch mode, select all videos and use default file type
     if batch_mode:
         logger.info(f"Batch mode enabled: Selecting all {len(available_videos)} videos")
-        return available_videos, "mp3"  # Default output format
-    
+        return available_videos, "wav"  # Changed default from "mp3" to "wav"
+        
     # Ask how to select videos
     selection_method = questionary.select(
         "How would you like to select videos?",

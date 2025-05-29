@@ -97,8 +97,8 @@ def main():
         "--file-type",
         type=str,
         choices=["wav", "mp3", "both", "1", "2", "3"],
-        default="mp3",
-        help="Output file format: wav (1), mp3 (2), or both (3)"
+        default="wav",  # Changed default from "mp3" to "wav"
+        help="Output file format: wav (1), mp3 (2), or both (3) (default: wav)"
     )
     parser.add_argument(
         "--skip-no-speech",
