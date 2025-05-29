@@ -86,6 +86,13 @@ if command -v poetry &>/dev/null; then
     echo "Installing speech recognition dependencies..."
     poetry install --with speech --no-interaction || echo "Warning: Some speech recognition dependencies failed to install"
     
+    # Install GitHub models if requested
+    if [ "$1" == "--with-models" ] || [ "$2" == "--with-models" ]; then
+        echo "Installing GitHub models..."
+        chmod +x "$PROJECT_ROOT/scripts/macos/install_models.sh"
+        "$PROJECT_ROOT/scripts/macos/install_models.sh"
+    fi
+    
     echo "Dependencies installation completed."
     
     # Make scripts executable

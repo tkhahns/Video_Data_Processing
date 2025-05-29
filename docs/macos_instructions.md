@@ -97,6 +97,7 @@ chmod +x run_all.sh
 chmod +x scripts/macos/run_separate_speech.sh
 chmod +x scripts/macos/run_speech_to_text.sh
 chmod +x scripts/macos/run_emotion_and_pose_recognition.sh
+chmod +x scripts/macos/install_models.sh
 ```
 
 ### 4. Place your videos in the data folder
@@ -230,6 +231,24 @@ poetry run python -m src.speech_to_text --input-dir "./my-speech" --output-dir "
 
 # Emotion and pose recognition
 poetry run python -m src.emotion_and_pose_recognition.cli --input-dir "./data" --output-dir "./my-emotions" --with-pose
+```
+
+### GitHub Model Installation
+
+To install models from GitHub repositories:
+
+```bash
+# Install all GitHub models
+./scripts/macos/install_models.sh
+
+# List available models
+poetry run python -m src.install_github_models.install_github_models --list
+
+# Update existing models
+./scripts/macos/install_models.sh --update
+
+# Install models to a specific directory
+poetry run python -m src.install_github_models.install_github_models --directory custom_models_dir
 ```
 
 ### Customizing the Pipeline
