@@ -3,6 +3,9 @@
 # Exit on error
 set -e
 
+# Add trap to handle Ctrl+C gracefully
+trap 'echo "Caught SIGINT — shutting down…"; kill 0; exit 1' SIGINT
+
 echo "===== Video Data Processing - Model Installer ====="
 echo "This script installs all required models from GitHub repositories"
 echo

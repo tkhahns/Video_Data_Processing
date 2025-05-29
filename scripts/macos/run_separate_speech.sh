@@ -3,6 +3,9 @@
 # Exit on error
 set -e
 
+# Add trap to handle Ctrl+C gracefully
+trap 'echo "Caught SIGINT — shutting down…"; kill 0; exit 1' SIGINT
+
 echo "=== Video Data Processing Speech Separation ==="
 echo "This script extracts and isolates speech from video files."
 
@@ -36,7 +39,7 @@ if [ "$1" == "--help" ] || [ "$1" == "-h" ]; then
     echo "  --input-dir DIR      Directory containing input video files (default: ./data/videos)"
     echo "  --output-dir DIR     Directory to save separated speech files (default: ./output/separated_speech)"
     echo "  --model MODEL        Speech separation model to use (sepformer, conv-tasnet)" 
-    echo "  --file-type TYPE     Output file format: wav (1), mp3 (2), or both (3) (default: mp3)"
+    echo "  --file-type TYPE     Output file format: wav (1), mp3 (2), or both (3) (default: wav)"
     echo "  --recursive          Process video files in subdirectories recursively"
     echo "  --debug              Enable debug logging"
     echo "  --interactive        Force interactive video selection mode"

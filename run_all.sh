@@ -3,6 +3,9 @@
 # Exit on error
 set -e
 
+# Add trap to handle Ctrl+C gracefully
+trap 'echo "Caught SIGINT — shutting down…"; kill 0; exit 1' SIGINT
+
 # Record start time
 START_TIME=$(date +%s)
 

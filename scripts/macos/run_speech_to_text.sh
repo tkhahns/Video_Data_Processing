@@ -3,6 +3,9 @@
 # Exit on error
 set -e
 
+# Add trap to handle Ctrl+C gracefully
+trap 'echo "Caught SIGINT — shutting down…"; kill 0; exit 1' SIGINT
+
 echo "=== Video Data Processing Speech-to-Text ==="
 echo "This script transcribes speech audio files to text."
 
